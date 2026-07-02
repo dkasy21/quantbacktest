@@ -124,6 +124,6 @@ function computeMetrics(trades: Trade[], equityCurve: { time: number; equity: nu
   const returns: number[] = [];
   for (let i=1;i<equityCurve.length;i++) { const prev=equityCurve[i-1].equity; if (prev>0) returns.push((equityCurve[i].equity-prev)/prev); }
   let sharpeRatio = 0;
-  if (returns.length>1) { const mean=returns.reduce((s,r)=>s+r,0)/returns.length; const var=returns.reduce((s,r)=>s+(r-mean)**2,0)/(returns.length-1); const std=Math.sqrt(var); sharpeRatio=std>0?(mean/std)*Math.sqrt(252):0; }
+  if (returns.length>1) { const mean=returns.reduce((s,r)=>s+r,0)/returns.length; const variance=returns.reduce((s,r)=>s+(r-mean)**2,0)/(returns.length-1); const std=Math.sqrt(variance); sharpeRatio=std>0?(mean/std)*Math.sqrt(252):0; }
   return { totalReturnPct, finalEquity, totalTrades: trades.length, winRate, profitFactor, avgWinPct, avgLossPct, maxDrawdownPct, sharpeRatio };
 }
