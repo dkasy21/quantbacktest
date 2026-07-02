@@ -1,0 +1,36 @@
+// Prisma schema. Uses SQLite for local dev — swap "provider" and DATABASE_URL
+// to "postgresql" for production (Vercel Postgres, Supabase, Neon, etc).
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String    @unique
+  passwordHash  String
+  createdAt     DateTime  @default(now())
+  plan              String    @default("free")
+  stripeCustomerId  String?
+  stripeSubId       String?
+  backtestCount     Int       @default(0)
+  backtestCountResetAt DateTime @default(now())
+  strategies    Strategy[]
+}
+
+model Strategy {
+  id          String    @id @default(cuid())
+  userId      String
+  user        User      @relation(fields: [userId], references: [id])
+  name        String
+  symbol      String
+  definition  String
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
