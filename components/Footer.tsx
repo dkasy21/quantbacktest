@@ -6,7 +6,7 @@ export default function Footer() {
       <p>
         <strong>Not investment advice.</strong> QuantBacktest is a research and education tool.
         Backtested results are hypothetical, do not reflect actual trading, and past performance
-        &mdash; simulated or real &mdash; does not guarantee future results. Nothing on this site
+        — simulated or real — does not guarantee future results. Nothing on this site
         is a recommendation to buy or sell any security or instrument. Trading involves risk of
         loss.
       </p>
