@@ -275,7 +275,7 @@ export default function StrategyBuilder({
           onChange={(e) => setAdvancedMode(e.target.checked)}
         />
         <label htmlFor="advanced-mode" className="text-sm">
-          Advanced mode — write entry/exit as a free-form expression instead of dropdown rules
+          Advanced mode â write entry/exit as a free-form expression instead of dropdown rules
         </label>
       </div>
 
@@ -334,13 +334,14 @@ export default function StrategyBuilder({
       {error && <p className="text-red-400 text-sm">{error}</p>}
 
       <button onClick={runBacktest} disabled={loading} className="btn-primary w-full">
-        {loading ? 'Running backtest…' : 'Run backtest'}
+        {loading ? 'Running backtestâ¦' : 'Run backtest'}
       </button>
     </div>
   );
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+interface FieldProps { label: string; children: React.ReactNode; }
+function Field({ label, children }: FieldProps) {
   return (
     <label className="block text-sm">
       <span className="block text-gray-400 mb-1">{label}</span>
@@ -349,6 +350,17 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   );
 }
 
+interface ConditionEditorProps {
+  title: string;
+  rows: RowCondition[];
+  logic: 'AND' | 'OR';
+  onLogicChange: (l: 'AND' | 'OR') => void;
+  onAdd: () => void;
+  onUpdate: (rowId: string, patch: Partial<RowCondition>) => void;
+  onRemove: (rowId: string) => void;
+  signals: SignalSpec[];
+  isBooleanSignal: (id: string) => boolean;
+}
 function ConditionEditor({
   title,
   rows,
@@ -359,17 +371,7 @@ function ConditionEditor({
   onRemove,
   signals,
   isBooleanSignal,
-}: {
-  title: string;
-  rows: RowCondition[];
-  logic: 'AND' | 'OR';
-  onLogicChange: (l: 'AND' | 'OR') => void;
-  onAdd: () => void;
-  onUpdate: (rowId: string, patch: Partial<RowCondition>) => void;
-  onRemove: (rowId: string) => void;
-  signals: SignalSpec[];
-  isBooleanSignal: (id: string) => boolean;
-}) {
+}: ConditionEditorProps) {
   return (
     <div>
       <div className="flex items-center justify-between mb-2">
