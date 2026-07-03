@@ -4,15 +4,15 @@ import Footer from '@/components/Footer';
 const FEATURES = [
   {
     title: 'No-code rule builder',
-    body: 'Combine indicators, ICT structure (FVGs, order blocks, BOS/MSS, liquidity sweeps), and volume signals with AND/OR logic — no coding required.',
+    body: 'Combine indicators, ICT structure (FVGs, order blocks, BOS/MSS, liquidity sweeps), and volume signals with AND/OR logic â no coding required.',
   },
   {
     title: 'Advanced expression mode',
-    body: 'Need something the dropdowns don’t cover? Drop into a free-form formula referencing any signal you’ve defined.',
+    body: 'Need something the dropdowns donât cover? Drop into a free-form formula referencing any signal youâve defined.',
   },
   {
     title: 'Instant results',
-    body: 'Get an equity curve, trade log, win rate, profit factor, drawdown, and Sharpe ratio in seconds — on any symbol, any date range.',
+    body: 'Get an equity curve, trade log, win rate, profit factor, drawdown, and Sharpe ratio in seconds â on any symbol, any date range.',
   },
 ];
 
@@ -32,8 +32,8 @@ export default function HomePage() {
           Turn a trading idea into a backtest<br />in minutes, not days.
         </h1>
         <p className="mt-6 text-lg text-gray-400 max-w-2xl mx-auto">
-          Describe your strategy &mdash; indicators, ICT concepts, volume signals, or your own
-          custom expression &mdash; and get a full backtest with charts and stats on any instrument.
+          Describe your strategy — indicators, ICT concepts, volume signals, or your own
+          custom expression — and get a full backtest with charts and stats on any instrument.
         </p>
         <div className="mt-8 flex justify-center gap-4">
           <Link href="/signup" className="btn-primary">Start backtesting free</Link>
