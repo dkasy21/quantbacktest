@@ -1,9 +1,7 @@
-// Prisma schema. Uses SQLite for local dev — swap "provider" and DATABASE_URL
-// to "postgresql" for production (Vercel Postgres, Supabase, Neon, etc).
-
+// Prisma schema for QuantBacktest - PostgreSQL (Neon via Vercel)
 datasource db {
-  provider = "sqlite"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("POSTGRES_PRISMA_URL")
 }
 
 generator client {
