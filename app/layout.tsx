@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import type { ReactNode } from 'react';
 import './globals.css';
 import Providers from '@/components/Providers';
 
@@ -7,7 +8,11 @@ export const metadata: Metadata = {
   description: 'Build trading strategies with a no-code rule builder and backtest them instantly with detailed stats and charts.',
 };
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+interface RootLayoutProps {
+  children: ReactNode;
+}
+
+export default function RootLayout({ children }: RootLayoutProps) {
   return (
     <html lang="en">
       <body>
