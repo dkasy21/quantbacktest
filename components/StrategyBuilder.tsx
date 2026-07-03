@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import type { ReactNode } from 'react';
 import { SIGNAL_CATALOG, catalogEntry, OPERATOR_LABELS } from '@/lib/backtest/catalog';
 import type { BacktestResult, Bar, Operator, SignalKind, SignalSpec } from '@/lib/backtest/types';
 
@@ -18,7 +19,7 @@ const BOOLEAN_OPERATORS: Operator[] = ['is_true', 'is_false'];
 
 let nextId = 1;
 function uid(prefix: string) {
-  return `${prefix}_${nextId++}`;
+  return prefix + '_' + (nextId++).toString();
 }
 
 function defaultSignal(kind: SignalKind): SignalSpec {
@@ -28,11 +29,120 @@ function defaultSignal(kind: SignalKind): SignalSpec {
   return { id: uid(kind), kind, params };
 }
 
-export default function StrategyBuilder({
-  onResult,
-}: {
+interface FieldProps {
+  label: string;
+  children: ReactNode;
+}
+
+function Field({ label, children }: FieldProps) {
+  return (
+    <label className="block text-sm">
+      <span className="block text-gray-400 mb-1">{label}</span>
+      {children}
+    </label>
+  );
+}
+
+interface ConditionEditorProps {
+  title: string;
+  rows: RowCondition[];
+  logic: 'AND' | 'OR';
+  onLogicChange: (l: 'AND' | 'OR') => void;
+  onAdd: () => void;
+  onUpdate: (rowId: string, patch: Partial<RowCondition>) => void;
+  onRemove: (rowId: string) => void;
+  signals: SignalSpec[];
+  isBooleanSignal: (id: string) => boolean;
+}
+
+function ConditionEditor({
+  title,
+  rows,
+  logic,
+  onLogicChange,
+  onAdd,
+  onUpdate,
+  onRemove,
+  signals,
+  isBooleanSignal,
+}: ConditionEditorProps) {
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-2">
+        <h3 className="font-semibold">{title}</h3>
+        <div className="flex items-center gap-2">
+          <select className="input text-sm" value={logic} onChange={(e) => onLogicChange(e.target.value as 'AND' | 'OR')}>
+            <option value="AND">Match ALL (AND)</option>
+            <option value="OR">Match ANY (OR)</option>
+          </select>
+          <button onClick={onAdd} className="text-sm text-brand-500 hover:underline">+ Add condition</button>
+        </div>
+      </div>
+      <div className="space-y-2">
+        {rows.length === 0 && <p className="text-xs text-gray-500">No conditions yet.</p>}
+        {rows.map((row) => {
+          const operators = isBooleanSignal(row.leftSignalId) ? BOOLEAN_OPERATORS : NUMERIC_OPERATORS;
+          const needsRight = row.operator !== 'is_true' && row.operator !== 'is_false';
+          return (
+            <div key={row.rowId} className="flex flex-wrap items-center gap-2 bg-black/20 p-2 rounded-lg">
+              <select className="input" value={row.leftSignalId} onChange={(e) => onUpdate(row.rowId, { leftSignalId: e.target.value })}>
+                <option value="close">close</option>
+                <option value="open">open</option>
+                <option value="high">high</option>
+                <option value="low">low</option>
+                <option value="volume">volume</option>
+                {signals.map((s) => (
+                  <option key={s.id} value={s.id}>{s.id}</option>
+                ))}
+              </select>
+              <select className="input" value={row.operator} onChange={(e) => onUpdate(row.rowId, { operator: e.target.value as Operator })}>
+                {operators.map((op) => (
+                  <option key={op} value={op}>{OPERATOR_LABELS[op]}</option>
+                ))}
+              </select>
+              {needsRight && (
+                <>
+                  <select
+                    className="input"
+                    value={row.rightType}
+                    onChange={(e) => onUpdate(row.rowId, { rightType: e.target.value as 'signal' | 'number' })}
+                  >
+                    <option value="number">number</option>
+                    <option value="signal">signal</option>
+                  </select>
+                  {row.rightType === 'number' ? (
+                    <input
+                      type="number"
+                      className="input w-24"
+                      value={row.rightNumber}
+                      onChange={(e) => onUpdate(row.rowId, { rightNumber: Number(e.target.value) })}
+                    />
+                  ) : (
+                    <select className="input" value={row.rightSignalId} onChange={(e) => onUpdate(row.rowId, { rightSignalId: e.target.value })}>
+                      <option value="close">close</option>
+                      {signals.map((s) => (
+                        <option key={s.id} value={s.id}>{s.id}</option>
+                      ))}
+                    </select>
+                  )}
+                </>
+              )}
+              <button onClick={() => onRemove(row.rowId)} className="text-xs text-red-400 ml-auto hover:underline">
+                Remove
+              </button>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+interface StrategyBuilderProps {
   onResult: (result: BacktestResult, bars: Bar[], symbol: string) => void;
-}) {
+}
+
+export default function StrategyBuilder({ onResult }: StrategyBuilderProps) {
   const [symbol, setSymbol] = useState('AAPL');
   const [startDate, setStartDate] = useState('2022-01-01');
   const [endDate, setEndDate] = useState(new Date().toISOString().slice(0, 10));
@@ -133,7 +243,7 @@ export default function StrategyBuilder({
       };
 
       const strategy = {
-        name: `${symbol} strategy`,
+        name: symbol + ' strategy',
         symbol,
         direction,
         signals,
@@ -275,7 +385,7 @@ export default function StrategyBuilder({
           onChange={(e) => setAdvancedMode(e.target.checked)}
         />
         <label htmlFor="advanced-mode" className="text-sm">
-          Advanced mode â write entry/exit as a free-form expression instead of dropdown rules
+          Advanced mode - write entry/exit as a free-form expression instead of dropdown rules
         </label>
       </div>
 
@@ -287,7 +397,7 @@ export default function StrategyBuilder({
               rows={3}
               value={advancedEntry}
               onChange={(e) => setAdvancedEntry(e.target.value)}
-              placeholder="e.g. rsi_1 < 30 && fvg_bullish"
+              placeholder="e.g. rsi_1 &lt; 30 &amp;&amp; fvg_bullish"
             />
           </Field>
           <Field label="Exit expression">
@@ -296,12 +406,13 @@ export default function StrategyBuilder({
               rows={3}
               value={advancedExit}
               onChange={(e) => setAdvancedExit(e.target.value)}
-              placeholder="e.g. rsi_1 > 70"
+              placeholder="e.g. rsi_1 &gt; 70"
             />
           </Field>
           <p className="text-xs text-gray-500 md:col-span-2">
-            Reference any signal id from the Signals list above, plus the always-available <code>open</code>,{' '}
-            <code>high</code>, <code>low</code>, <code>close</code>, <code>volume</code>. Operators: {'>'} {'>='} {'<'} {'<='} {'=='} {'!='} {'&&'} {'||'} {'!'}.
+            Reference any signal id from the Signals list above, plus the always-available{' '}
+            <code>open</code>, <code>high</code>, <code>low</code>, <code>close</code>, <code>volume</code>.
+            Operators: {'>'} {'>='} {'<'} {'<='} {'=='} {'!='} {'&&'} {'||'} {'!'}.
           </p>
         </div>
       ) : (
@@ -334,112 +445,8 @@ export default function StrategyBuilder({
       {error && <p className="text-red-400 text-sm">{error}</p>}
 
       <button onClick={runBacktest} disabled={loading} className="btn-primary w-full">
-        {loading ? 'Running backtestâ¦' : 'Run backtest'}
+        {loading ? 'Running backtest...' : 'Run backtest'}
       </button>
-    </div>
-  );
-}
-
-interface FieldProps { label: string; children: React.ReactNode; }
-function Field({ label, children }: FieldProps) {
-  return (
-    <label className="block text-sm">
-      <span className="block text-gray-400 mb-1">{label}</span>
-      {children}
-    </label>
-  );
-}
-
-interface ConditionEditorProps {
-  title: string;
-  rows: RowCondition[];
-  logic: 'AND' | 'OR';
-  onLogicChange: (l: 'AND' | 'OR') => void;
-  onAdd: () => void;
-  onUpdate: (rowId: string, patch: Partial<RowCondition>) => void;
-  onRemove: (rowId: string) => void;
-  signals: SignalSpec[];
-  isBooleanSignal: (id: string) => boolean;
-}
-function ConditionEditor({
-  title,
-  rows,
-  logic,
-  onLogicChange,
-  onAdd,
-  onUpdate,
-  onRemove,
-  signals,
-  isBooleanSignal,
-}: ConditionEditorProps) {
-  return (
-    <div>
-      <div className="flex items-center justify-between mb-2">
-        <h3 className="font-semibold">{title}</h3>
-        <div className="flex items-center gap-2">
-          <select className="input text-sm" value={logic} onChange={(e) => onLogicChange(e.target.value as 'AND' | 'OR')}>
-            <option value="AND">Match ALL (AND)</option>
-            <option value="OR">Match ANY (OR)</option>
-          </select>
-          <button onClick={onAdd} className="text-sm text-brand-500 hover:underline">+ Add condition</button>
-        </div>
-      </div>
-      <div className="space-y-2">
-        {rows.length === 0 && <p className="text-xs text-gray-500">No conditions yet.</p>}
-        {rows.map((row) => {
-          const operators = isBooleanSignal(row.leftSignalId) ? BOOLEAN_OPERATORS : NUMERIC_OPERATORS;
-          const needsRight = row.operator !== 'is_true' && row.operator !== 'is_false';
-          return (
-            <div key={row.rowId} className="flex flex-wrap items-center gap-2 bg-black/20 p-2 rounded-lg">
-              <select className="input" value={row.leftSignalId} onChange={(e) => onUpdate(row.rowId, { leftSignalId: e.target.value })}>
-                <option value="close">close</option>
-                <option value="open">open</option>
-                <option value="high">high</option>
-                <option value="low'>low</option>
-                <option value="volume">volume</option>
-                {signals.map((s) => (
-                  <option key={s.id} value={s.id}>{s.id}</option>
-                ))}
-              </select>
-              <select className="input" value={row.operator} onChange={(e) => onUpdate(row.rowId, { operator: e.target.value as Operator })}>
-                {operators.map((op) => (
-                  <option key={op} value={op}>{OPERATOR_LABELS[op]}</option>
-                ))}
-              </select>
-              {needsRight && (
-                <>
-                  <select
-                    className="input"
-                    value={row.rightType}
-                    onChange={(e) => onUpdate(row.rowId, { rightType: e.target.value as 'signal' | 'number' })}
-                  >
-                    <option value="number">number</option>
-                    <option value="signal">signal</option>
-                  </select>
-                  {row.rightType === 'number' ? (
-                    <input
-                      type="number"
-                      className="input w-24"
-                      value={row.rightNumber}
-                      onChange={(e) => onUpdate(row.rowId, { rightNumber: Number(e.target.value) })}
-                    />
-                  ) : (
-                    <select className="input" value={row.rightSignalId} onChange={(e) => onUpdate(row.rowId, { rightSignalId: e.target.value })}>
-                      <option value="close">close</option>
-                      {signals.map((s) => (
-                        <option key={s.id} value={s.id}>{s.id}</option>
-                      ))}
-                    </select>
-                  )}
-                </>
-              )}
-              <button onClick={() => onRemove(row.rowId)} className="text-xs text-red-400 ml-auto hover:underline">
-                Remove
-              </button>
-            </div>
-          );
-        })}
-      </div>
     </div>
   );
 }
