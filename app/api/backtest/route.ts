@@ -5,7 +5,7 @@ import { prisma } from '@/lib/prisma';
 import { backtestRequestSchema } from '@/lib/backtest/schema';
 import { runBacktest, validateStrategy } from '@/lib/backtest/engine';
 import { fetchBars, DataFetchError } from '@/lib/data';
-import { ensureQuotaAndConsume } from '@/lib/plan';
+import { ensureQuotaAndConsume, isFuturesSymbol } from '@/lib/plan';
 import type { StrategyDefinition } from '@/lib/backtest/types';
 
 export async function POST(req: Request) {
@@ -36,10 +36,18 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'User not found.' }, { status: 404 });
   }
 
+  // Block futures/indices for free users
+  if (isFuturesSymbol(strategy.symbol) && user.plan !== 'pro') {
+    return NextResponse.json(
+      { error: 'Futures & index symbols (MNQ, ES, NQ, XAUUSD, SPX, etc.) require a Pro subscription ($99/month). Upgrade to unlock futures backtesting with full historical data.' },
+      { status: 403 }
+    );
+  }
+
   const quota = await ensureQuotaAndConsume(user);
   if (!quota.allowed) {
     return NextResponse.json(
-      { error: 'Free plan monthly backtest limit reached. Upgrade to Pro for unlimited backtests.' },
+      { error: (quota as { message?: string }).message ?? 'Free plan limit reached (1 backtest/week). Upgrade to Pro for unlimited backtests.' },
       { status: 429 }
     );
   }
