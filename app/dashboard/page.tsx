@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useSession, signOut } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
+import AIStrategyInput from '@/components/AIStrategyInput';
 import StrategyBuilder from '@/components/StrategyBuilder';
 import PriceChart from '@/components/PriceChart';
 import EquityChart from '@/components/EquityChart';
@@ -16,6 +17,7 @@ export default function DashboardPage() {
   const [result, setResult] = useState<BacktestResult | null>(null);
   const [bars, setBars] = useState<Bar[]>([]);
   const [symbol, setSymbol] = useState('');
+  const [mode, setMode] = useState<'ai' | 'manual'>('ai');
 
   if (status === 'loading') {
     return <main className="min-h-screen flex items-center justify-center">Loading…</main>;
@@ -32,6 +34,15 @@ export default function DashboardPage() {
     else alert(data.error ?? 'Could not start checkout.');
   }
 
+  function handleResult(r: BacktestResult, b: Bar[], s: string) {
+    setResult(r);
+    setBars(b);
+    setSymbol(s);
+    setTimeout(() => {
+      document.getElementById('results-section')?.scrollIntoView({ behavior: 'smooth' });
+    }, 100);
+  }
+
   return (
     <main className="min-h-screen max-w-6xl mx-auto px-6 py-8 space-y-6">
       <header className="flex items-center justify-between">
@@ -39,22 +50,33 @@ export default function DashboardPage() {
         <div className="flex items-center gap-4 text-sm">
           <span className="text-gray-400">{session?.user?.email}</span>
           <button onClick={upgrade} className="text-brand-500 hover:underline">Upgrade to Pro</button>
-          <button onClick={() => signOut({ callbackUrl: '/' })} className="text-gray-400 hover:underline">
-            Log out
-          </button>
+          <button onClick={() => signOut({ callbackUrl: '/' })} className="text-gray-400 hover:underline">Log out</button>
         </div>
       </header>
 
-      <StrategyBuilder
-        onResult={(r, b, s) => {
-          setResult(r);
-          setBars(b);
-          setSymbol(s);
-        }}
-      />
+      <div className="flex gap-1 bg-black/30 border border-white/10 rounded-lg p-1 w-fit">
+        <button
+          onClick={() => setMode('ai')}
+          className={`px-5 py-2 rounded-md text-sm font-medium transition-all ${mode === 'ai' ? 'bg-brand-500 text-white shadow' : 'text-gray-400 hover:text-white'}`}
+        >
+          ✦ AI Strategy
+        </button>
+        <button
+          onClick={() => setMode('manual')}
+          className={`px-5 py-2 rounded-md text-sm font-medium transition-all ${mode === 'manual' ? 'bg-brand-500 text-white shadow' : 'text-gray-400 hover:text-white'}`}
+        >
+          Rule Builder
+        </button>
+      </div>
+
+      {mode === 'ai' ? (
+        <AIStrategyInput onResult={handleResult} />
+      ) : (
+        <StrategyBuilder onResult={handleResult} />
+      )}
 
       {result && (
-        <div className="space-y-4">
+        <div id="results-section" className="space-y-4">
           <div className="card p-4">
             <h2 className="font-semibold mb-3">{symbol} — price &amp; trade markers</h2>
             <PriceChart bars={bars} trades={result.trades} />
@@ -66,6 +88,7 @@ export default function DashboardPage() {
           <ResultsPanel result={result} />
         </div>
       )}
+
       <Footer />
     </main>
   );
