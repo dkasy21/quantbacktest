@@ -4,7 +4,6 @@ import { useState } from 'react';
 import { useSession, signOut } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import AIStrategyInput from '@/components/AIStrategyInput';
-import StrategyBuilder from '@/components/StrategyBuilder';
 import PriceChart from '@/components/PriceChart';
 import EquityChart from '@/components/EquityChart';
 import ResultsPanel from '@/components/ResultsPanel';
@@ -17,7 +16,6 @@ export default function DashboardPage() {
   const [result, setResult] = useState<BacktestResult | null>(null);
   const [bars, setBars] = useState<Bar[]>([]);
   const [symbol, setSymbol] = useState('');
-  const [mode, setMode] = useState<'ai' | 'manual'>('ai');
 
   if (status === 'loading') {
     return <main className="min-h-screen flex items-center justify-center">Loading…</main>;
@@ -45,35 +43,24 @@ export default function DashboardPage() {
 
   return (
     <main className="min-h-screen max-w-6xl mx-auto px-6 py-8 space-y-6">
+      {/* Header */}
       <header className="flex items-center justify-between">
         <h1 className="text-xl font-bold">QuantBacktest</h1>
         <div className="flex items-center gap-4 text-sm">
           <span className="text-gray-400">{session?.user?.email}</span>
-          <button onClick={upgrade} className="text-brand-500 hover:underline">Upgrade to Pro</button>
-          <button onClick={() => signOut({ callbackUrl: '/' })} className="text-gray-400 hover:underline">Log out</button>
+          <button onClick={upgrade} className="text-brand-500 hover:underline">
+            Upgrade to Pro
+          </button>
+          <button
+            onClick={() => signOut({ callbackUrl: '/' })}
+            className="text-gray-400 hover:underline"
+          >
+            Log out
+          </button>
         </div>
       </header>
 
-      <div className="flex gap-1 bg-black/30 border border-white/10 rounded-lg p-1 w-fit">
-        <button
-          onClick={() => setMode('ai')}
-          className={`px-5 py-2 rounded-md text-sm font-medium transition-all ${mode === 'ai' ? 'bg-brand-500 text-white shadow' : 'text-gray-400 hover:text-white'}`}
-        >
-          ✦ AI Strategy
-        </button>
-        <button
-          onClick={() => setMode('manual')}
-          className={`px-5 py-2 rounded-md text-sm font-medium transition-all ${mode === 'manual' ? 'bg-brand-500 text-white shadow' : 'text-gray-400 hover:text-white'}`}
-        >
-          Rule Builder
-        </button>
-      </div>
-
-      {mode === 'ai' ? (
-        <AIStrategyInput onResult={handleResult} />
-      ) : (
-        <StrategyBuilder onResult={handleResult} />
-      )}
+      <AIStrategyInput onResult={handleResult} />
 
       {result && (
         <div id="results-section" className="space-y-4">
