@@ -27,28 +27,22 @@ const EXAMPLES = [
 ];
 
 const POPULAR_SYMBOLS = [
-  // Equity futures
   { label: 'MNQ', desc: 'Micro Nasdaq' },
   { label: 'NQ', desc: 'Nasdaq Futures' },
   { label: 'MES', desc: 'Micro S&P 500' },
   { label: 'ES', desc: 'S&P 500 Futures' },
   { label: 'YM', desc: 'Dow Futures' },
   { label: 'RTY', desc: 'Russell 2000' },
-  // Cash indices
   { label: 'SPX', desc: 'S&P 500' },
   { label: 'NDX', desc: 'Nasdaq 100' },
   { label: 'VIX', desc: 'Volatility' },
-  // Commodities
   { label: 'XAUUSD', desc: 'Gold' },
   { label: 'XAGUSD', desc: 'Silver' },
   { label: 'CL', desc: 'Crude Oil' },
-  // FX
   { label: 'EURUSD', desc: 'EUR/USD' },
   { label: 'DXY', desc: 'Dollar Index' },
-  // Crypto
   { label: 'BTC', desc: 'Bitcoin' },
   { label: 'ETH', desc: 'Ethereum' },
-  // Stocks
   { label: 'SPY', desc: 'S&P 500 ETF' },
   { label: 'QQQ', desc: 'Nasdaq ETF' },
   { label: 'AAPL', desc: 'Apple' },
@@ -56,17 +50,34 @@ const POPULAR_SYMBOLS = [
   { label: 'NVDA', desc: 'Nvidia' },
 ];
 
+// Max lookback in days per interval (Yahoo Finance limits)
+const MAX_DAYS: Record<string, number> = {
+  '5m': 55, '15m': 55, '30m': 55, '1h': 700, '1d': 1825,
+};
+
+function getDefaultStart(interval: string): string {
+  const days = Math.min(MAX_DAYS[interval] ?? 55, interval === '1d' ? 365 : 30);
+  const d = new Date();
+  d.setDate(d.getDate() - days);
+  return d.toISOString().slice(0, 10);
+}
+
 export default function AIStrategyInput({ onResult }: AIStrategyInputProps) {
   const [prompt, setPrompt] = useState('');
   const [symbol, setSymbol] = useState('MNQ');
   const [interval, setInterval] = useState<'1d' | '1h' | '15m' | '5m'>('5m');
-  const [startDate, setStartDate] = useState('2025-05-01');
+  const [startDate, setStartDate] = useState(getDefaultStart('5m'));
   const [endDate, setEndDate] = useState(new Date().toISOString().slice(0, 10));
   const [initialCapital, setInitialCapital] = useState(10000);
   const [loading, setLoading] = useState(false);
   const [stage, setStage] = useState<'idle' | 'parsing' | 'backtesting'>('idle');
   const [error, setError] = useState<string | null>(null);
   const [interpretation, setInterpretation] = useState<string | null>(null);
+
+  function handleIntervalChange(newInterval: '1d' | '1h' | '15m' | '5m') {
+    setInterval(newInterval);
+    setStartDate(getDefaultStart(newInterval));
+  }
 
   async function handleSubmit() {
     if (!prompt.trim()) return;
@@ -112,7 +123,6 @@ export default function AIStrategyInput({ onResult }: AIStrategyInputProps) {
 
   return (
     <div className="card p-6 space-y-5">
-      {/* Header */}
       <div>
         <div className="flex items-center gap-2 mb-1">
           <span className="text-brand-500 text-lg">✦</span>
@@ -185,7 +195,7 @@ export default function AIStrategyInput({ onResult }: AIStrategyInputProps) {
           <select
             className="input w-full"
             value={interval}
-            onChange={(e) => setInterval(e.target.value as typeof interval)}
+            onChange={(e) => handleIntervalChange(e.target.value as typeof interval)}
             disabled={loading}
           >
             <option value="1d">Daily</option>
@@ -226,14 +236,15 @@ export default function AIStrategyInput({ onResult }: AIStrategyInputProps) {
         </label>
       </div>
 
-      {/* Intraday warning */}
+      {/* Intraday info */}
       {interval !== '1d' && (
         <p className="text-xs text-amber-400">
-          Intraday data (5m/15m/1h) is only available for roughly the last 60 days on Yahoo Finance.
+          {interval === '1h'
+            ? 'Hourly data: up to ~2 years available.'
+            : 'Intraday (5m/15m): Yahoo Finance caps at ~60 days — start date auto-set accordingly.'}
         </p>
       )}
 
-      {/* AI interpretation banner */}
       {interpretation && (
         <div className="bg-brand-500/10 border border-brand-500/30 rounded-lg p-4 text-sm">
           <p className="text-brand-400 font-medium mb-1">AI interpreted:</p>
@@ -241,14 +252,12 @@ export default function AIStrategyInput({ onResult }: AIStrategyInputProps) {
         </div>
       )}
 
-      {/* Error */}
       {error && (
         <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-3 text-sm text-red-400">
           {error}
         </div>
       )}
 
-      {/* Submit button */}
       <button
         onClick={handleSubmit}
         disabled={loading || !prompt.trim()}
