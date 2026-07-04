@@ -4,7 +4,7 @@ import bcrypt from 'bcryptjs';
 import { prisma } from './prisma';
 
 export const authOptions: AuthOptions = {
-  session: { strategy: 'jwk' },
+  session: { strategy: 'jwt' },
   pages: { signIn: '/login' },
   secret: process.env.NEXTAUTH_SECRET,
   providers: [
