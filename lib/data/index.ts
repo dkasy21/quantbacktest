@@ -1,42 +1,42 @@
 import * as yahoo from './yahooData';
 import { fetchBars as polygonFetchBars } from './polygonData';
+import { fetchBars as twelveDataFetchBars } from './twelveDataData';
 export type { Interval, FetchBarsParams } from './yahooData';
 export { DataFetchError } from './yahooData';
 import type { FetchBarsParams } from './yahooData';
 
-// Resolved Yahoo tickers that are futures or indices — Polygon free tier doesn't cover these
-function isFuturesOrIndex(rawSymbol: string): boolean {
-  const s = rawSymbol.toUpperCase();
-  // Futures (ES=F, MNQ=F, GC=F, etc.) or indices (^GSPC) or dollar index
-  if (s.endsWith('=F') || s.startsWith('^') || s.startsWith('DX-')) return true;
-  // Common futures aliases before resolution
-  const FUTURES_ALIASES = new Set([
-    'MNQ','NQ','MES','ES','YM','MYM','RTY','M2K',
-    'XAUUSD','GOLD','GC','XAGUSD','SILVER','SI',
-    'CL','WTI','CRUDE','OIL','NG','HG',
-    'ZN','ZB','SPX','NDX','DJI','RUT','VIX','DXY',
-  ]);
-  return FUTURES_ALIASES.has(s);
+function isYahooOnly(s: string): boolean {
+  const u = s.toUpperCase();
+  return u.endsWith('=F') || u.startsWith('DX-');
+}
+
+function toTwelveDataSymbol(raw: string): string {
+  const s = raw.toUpperCase();
+  const MAP: Record<string, string> = {
+    'ES': 'SPX', 'MES': 'SPX', 'NQ': 'NDX', 'MNQ': 'NDX',
+    'YM': 'DJI', 'MYM': 'DJI', 'RTY': 'RUT', 'M2K': 'RUT',
+    'XAUUSD': 'XAU/USD', 'GC': 'XAU/USD', 'GOLD': 'XAU/USD',
+    'XAGUSD': 'XAG/USD', 'SI': 'XAG/USD', 'SILVER': 'XAG/USD',
+    'BTC': 'BTC/USD', 'ETH': 'ETH/USD',
+    'EURUSD': 'EUR/USD', 'GBPUSD': 'GBP/USD', 'USDJPY': 'USD/JPY', 'DXY': 'DXY',
+    'CL': 'WTI', 'OIL': 'WTI', 'WTI': 'WTI',
+    'SPX': 'SPX', 'NDX': 'NDX', 'VIX': 'VIX', 'DJI': 'DJI',
+  };
+  return MAP[s] ?? raw;
 }
 
 export async function fetchBars(params: FetchBarsParams) {
+  const hasTwelveData = !!process.env.TWELVE_DATA_API_KEY;
   const hasPolygon = !!process.env.POLYGON_API_KEY;
-
-  // Route futures & indices to Yahoo always
-  if (isFuturesOrIndex(params.symbol)) {
-    return yahoo.fetchBars(params);
-  }
-
-  // For stocks/ETFs/crypto/forex: use Polygon if key is available, else Yahoo
-  if (hasPolygon) {
+  if (isYahooOnly(params.symbol)) return yahoo.fetchBars(params);
+  if (hasTwelveData) {
     try {
-      return await polygonFetchBars(params);
-    } catch (err) {
-      // Fall back to Yahoo on Polygon failure
-      console.warn('Polygon fetch failed, falling back to Yahoo:', err);
-      return yahoo.fetchBars(params);
-    }
+      return await twelveDataFetchBars({ ...params, symbol: toTwelveDataSymbol(params.symbol) });
+    } catch (err) { console.warn('[data] Twelve Data failed:', err); }
   }
-
+  if (hasPolygon) {
+    try { return await polygonFetchBars(params); }
+    catch (err) { console.warn('[data] Polygon failed:', err); }
+  }
   return yahoo.fetchBars(params);
 }
