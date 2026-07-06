@@ -44,17 +44,17 @@ const SYSTEM_PROMPT = `You are a quantitative trading strategy parser. The user 
 ## StrategyDefinition schema
 {
   "name": string,
-  "symbol": string,            // set to whatever the user provides
+  "symbol": string,
   "direction": "long" | "short" | "both",
   "signals": [{ "id": string, "kind": SignalKind, "params"?: Record<string, number> }],
-  "entry": ConditionGroup,     // use empty group + advancedExpression when logic is complex
+  "entry": ConditionGroup,
   "exit": ConditionGroup,
-  "advancedExpression"?: {     // PREFER this for multi-condition logic — more expressive
-    "entry"?: string,          // reference signal ids; operators: > >= < <= == != && || !
+  "advancedExpression"?: {
+    "entry"?: string,
     "exit"?: string
   },
   "risk": {
-    "positionSizePct": number,  // 1-100
+    "positionSizePct": number,
     "stopLossPct"?: number,
     "takeProfitPct"?: number,
     "maxBarsInTrade"?: number
@@ -98,10 +98,10 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Not authenticated.' }, { status: 401 });
   }
 
-  const apiKey = process.env.ANTHROPIC_API_KEY;
+  const apiKey = process.env.GROQ_API_KEY;
   if (!apiKey) {
     return NextResponse.json(
-      { error: 'AI strategy parsing not configured. Add ANTHROPIC_API_KEY to environment variables.' },
+      { error: 'AI strategy parsing not configured. Contact support.' },
       { status: 500 }
     );
   }
@@ -129,29 +129,31 @@ Initial capital: ${initialCapital || 10000}
 Convert this strategy into a complete StrategyDefinition JSON. Set symbol to "${symbol || 'SPY'}" and initialCapital to ${initialCapital || 10000}.`;
 
   try {
-    const aiResponse = await fetch('https://api.anthropic.com/v1/messages', {
+    const aiResponse = await fetch('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01',
+        'Authorization': `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
-        model: 'claude-haiku-4-5-20251001',
+        model: 'llama-3.3-70b-versatile',
         max_tokens: 2048,
-        system: SYSTEM_PROMPT,
-        messages: [{ role: 'user', content: userMessage }],
+        temperature: 0.1,
+        messages: [
+          { role: 'system', content: SYSTEM_PROMPT },
+          { role: 'user', content: userMessage },
+        ],
       }),
     });
 
     if (!aiResponse.ok) {
       const err = await aiResponse.text();
-      console.error('Anthropic API error:', err);
+      console.error('Groq API error:', err);
       return NextResponse.json({ error: 'AI service error. Please try again.' }, { status: 502 });
     }
 
     const aiData = await aiResponse.json();
-    const text: string = aiData.content?.[0]?.text ?? '';
+    const text: string = aiData.choices?.[0]?.message?.content ?? '';
 
     let parsed: { interpretation: string; strategy: unknown };
     try {
