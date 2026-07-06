@@ -69,9 +69,15 @@ export default function AIStrategyInput({ onResult }: AIStrategyInputProps) {
   }, []);
 
   const isPro = quota?.plan === 'pro';
+  // quota is null until the /api/user/quota fetch resolves. Gating on
+  // `quota !== null` (not just `!isPro`) stops a Pro user from briefly seeing
+  // futures symbols as locked — or worse, having a click during that window
+  // pop the "Pro Plan Required" modal — before we actually know their plan.
+  // Fixed during the 2026-07-06 audit.
+  const planKnown = quota !== null;
 
   function handleSymbolClick(sym: string) {
-    if (!isPro && isProSymbol(sym)) { setUpgradeModal({ open: true, reason: 'futures' }); return; }
+    if (planKnown && !isPro && isProSymbol(sym)) { setUpgradeModal({ open: true, reason: 'futures' }); return; }
     setSymbol(sym);
   }
 
@@ -84,8 +90,33 @@ export default function AIStrategyInput({ onResult }: AIStrategyInputProps) {
       const aiRes = await fetch('/api/ai-strategy', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ prompt, symbol, interval, startDate, endDate, initialCapital }) });
       const aiData = await aiRes.json();
       if (!aiRes.ok) { setError(aiData.error ?? 'AI parsing failed.'); return; }
-      setInterpretation(aiData.interpretation); setStage('backtesting');
-      const btRes = await fetch('/api/backtest', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ strategy: aiData.strategy, startDate, endDate, interval }) });
+
+      // Fixed during the 2026-07-06 audit: kill_zone, orb_bullish, and
+      // orb_bearish are defined in terms of a bar's time-of-day and only make
+      // sense with more than one bar per session. On Daily bars there is
+      // exactly one bar per session, so these signals can never fire and the
+      // backtest silently comes back with zero trades — which, for the "ICT
+      // / ORB" example specifically, is the very first thing a new user is
+      // likely to click. If the parsed strategy uses one of these and the
+      // request was Daily, re-run the backtest on 15-minute bars instead and
+      // say so, rather than returning a dead result.
+      const SESSION_DEPENDENT_KINDS = new Set(['kill_zone', 'orb_bullish', 'orb_bearish']);
+      const usesSessionSignal = (aiData.strategy?.signals ?? []).some((s: { kind: string }) =>
+        SESSION_DEPENDENT_KINDS.has(s.kind)
+      );
+      let effectiveInterval = interval;
+      let effectiveStartDate = startDate;
+      let noteSuffix = '';
+      if (usesSessionSignal && interval === '1d') {
+        effectiveInterval = '15m';
+        effectiveStartDate = getDefaultStart('15m');
+        setInterval('15m');
+        setStartDate(effectiveStartDate);
+        noteSuffix = ' (Switched to 15-minute bars automatically — kill-zone/opening-range signals need intraday data and would never trigger on Daily bars.)';
+      }
+      setInterpretation((aiData.interpretation ?? '') + noteSuffix);
+      setStage('backtesting');
+      const btRes = await fetch('/api/backtest', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ strategy: aiData.strategy, startDate: effectiveStartDate, endDate, interval: effectiveInterval }) });
       const btData = await btRes.json();
       if (btRes.status === 403) { setUpgradeModal({ open: true, reason: 'futures' }); return; }
       if (btRes.status === 429) { setUpgradeModal({ open: true, reason: 'quota' }); fetch('/api/user/quota').then(r => r.json()).then(d => { if (!d.error) setQuota(d); }); return; }
@@ -119,10 +150,10 @@ export default function AIStrategyInput({ onResult }: AIStrategyInputProps) {
         </div>
 
         <div>
-          <label className="block text-sm text-gray-400 mb-2">Instrument {!isPro && <span className="text-xs text-gray-600 ml-1">🔒 = Pro only</span>}</label>
+          <label className="block text-sm text-gray-400 mb-2">Instrument {planKnown && !isPro && <span className="text-xs text-gray-600 ml-1">🔒 = Pro only</span>}</label>
           <div className="flex flex-wrap gap-2 mb-2">
             {POPULAR_SYMBOLS.map(s => {
-              const locked = !isPro && isProSymbol(s.label);
+              const locked = planKnown && !isPro && isProSymbol(s.label);
               return (
                 <button key={s.label} onClick={() => handleSymbolClick(s.label)} disabled={loading} title={locked ? s.desc + ' — Pro required' : s.desc}
                   className={'px-2.5 py-1 rounded text-xs font-mono font-medium border transition-all ' + (symbol === s.label ? 'bg-brand-500 border-brand-500 text-white' : locked ? 'border-white/5 text-gray-600 hover:border-indigo-500/40 hover:text-indigo-400' : 'border-white/10 text-gray-300 hover:border-brand-500/50 hover:text-white')}>
