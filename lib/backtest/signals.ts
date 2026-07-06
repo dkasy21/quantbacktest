@@ -32,7 +32,7 @@ export function buildSignalTable(bars: Bar[], specs: SignalSpec[]): SignalTable 
       case 'open': table[spec.id] = opens; break;
       case 'high': table[spec.id] = highs; break;
       case 'low': table[spec.id] = lows; break;
-      case 'close': table[spec.id] = closes; oreak;
+      case 'close': table[spec.id] = closes; break;
       case 'volume': table[spec.id] = volumes; break;
       case 'sma': table[spec.id] = ind.sma(closes, num('period', 20)); break;
       case 'ema': table[spec.id] = ind.ema(closes, num('period', 20)); break;
@@ -68,6 +68,8 @@ export function buildSignalTable(bars: Bar[], specs: SignalSpec[]): SignalTable 
       case 'premium_zone': table[spec.id] = pat.premiumDiscountZone(bars, num('rangePeriod', 20)).premium; break;
       case 'discount_zone': table[spec.id] = pat.premiumDiscountZone(bars, num('rangePeriod', 20)).discount; break;
       case 'kill_zone': table[spec.id] = pat.killZone(bars, num('startHourUtc', 12), num('endHourUtc', 15)); break;
+      case 'orb_bullish': table[spec.id] = pat.openingRangeBreakout(bars, num('startHourUtc', 13), num('startMinuteUtc', 30), num('rangeBars', 1)).bullish; break;
+      case 'orb_bearish': table[spec.id] = pat.openingRangeBreakout(bars, num('startHourUtc', 13), num('startMinuteUtc', 30), num('rangeBars', 1)).bearish; break;
       default: throw new Error(`Unknown signal kind: ${spec.kind}`);
     }
   }
