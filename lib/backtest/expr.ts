@@ -72,6 +72,12 @@ function tokenize(input: string): Token[] {
     if (c === '/') { tokens.push({ type: 'SLASH' }); i++; continue; }
     if (c === '(') { tokens.push({ type: 'LPAREN' }); i++; continue; }
     if (c === ')') { tokens.push({ type: 'RPAREN' }); i++; continue; }
+    if (c === '[' || c === ']') {
+      throw new Error(
+        'Lookback/subscript notation (e.g. close[1]) is not supported. ' +
+        'Use pre-built indicator signals like sma, ema, or rsi instead.'
+      );
+    }
     throw new Error(`Unexpected character in expression: "${c}" at position ${i}`);
   }
   tokens.push({ type: 'EOF' });
