@@ -74,11 +74,22 @@ Condition: { "type": "condition", "left": {"signalId": string}, "operator": "gt"
 - Always include sensible risk: stopLossPct and takeProfitPct
 - maxBarsInTrade is useful for intraday strategies
 
+## CRITICAL — advancedExpression rules
+- NEVER use subscript, array, or lookback notation. close[1], sma[5], ema_20[2] etc. are ALL FORBIDDEN.
+- The evaluator only understands: signal_id comparisons, numbers, and operators > >= < <= == != && || !
+- Reference signal ids exactly as defined in the "signals" array (e.g. if id is "rsi_1", write "rsi_1 < 30")
+- Do NOT append [0], [1], or any bracket after a signal id or price variable
+
 ## Output — respond with ONLY valid JSON, no markdown, no extra text:
 {
   "interpretation": "2-4 sentences: what you understood, how you mapped it, any limitations",
   "strategy": { ...complete StrategyDefinition... }
 }`;
+
+// Strip any lookback/subscript notation like close[1] or sma_20[2] from expression strings
+function sanitizeExpression(expr: string): string {
+  return expr.replace(/\[\d+\]/g, '');
+}
 
 export async function POST(req: Request) {
   const session = await getServerSession(authOptions);
@@ -87,10 +98,10 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Not authenticated.' }, { status: 401 });
   }
 
-  const apiKey = process.env.GROQ_API_KEY;
+  const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
     return NextResponse.json(
-      { error: 'AI strategy parsing not configured. Add GROQ_API_KEY to Vercel environment variables.' },
+      { error: 'AI strategy parsing not configured. Add ANTHROPIC_API_KEY to environment variables.' },
       { status: 500 }
     );
   }
@@ -118,31 +129,29 @@ Initial capital: ${initialCapital || 10000}
 Convert this strategy into a complete StrategyDefinition JSON. Set symbol to "${symbol || 'SPY'}" and initialCapital to ${initialCapital || 10000}.`;
 
   try {
-    const aiResponse = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+    const aiResponse = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`,
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
       },
       body: JSON.stringify({
-        model: 'llama-3.3-70b-versatile',
+        model: 'claude-haiku-4-5-20251001',
         max_tokens: 2048,
-        temperature: 0.1,
-        messages: [
-          { role: 'system', content: SYSTEM_PROMPT },
-          { role: 'user', content: userMessage },
-        ],
+        system: SYSTEM_PROMPT,
+        messages: [{ role: 'user', content: userMessage }],
       }),
     });
 
     if (!aiResponse.ok) {
       const err = await aiResponse.text();
-      console.error('Groq API error:', err);
+      console.error('Anthropic API error:', err);
       return NextResponse.json({ error: 'AI service error. Please try again.' }, { status: 502 });
     }
 
     const aiData = await aiResponse.json();
-    const text: string = aiData.choices?.[0]?.message?.content ?? '';
+    const text: string = aiData.content?.[0]?.text ?? '';
 
     let parsed: { interpretation: string; strategy: unknown };
     try {
@@ -157,6 +166,16 @@ Convert this strategy into a complete StrategyDefinition JSON. Set symbol to "${
         { error: 'AI returned an unparseable response. Try rephrasing your strategy description.' },
         { status: 502 }
       );
+    }
+
+    // Sanitize advancedExpression to strip any lookback notation the AI might have generated
+    if (parsed.strategy && typeof parsed.strategy === 'object') {
+      const s = parsed.strategy as Record<string, unknown>;
+      if (s.advancedExpression && typeof s.advancedExpression === 'object') {
+        const ae = s.advancedExpression as Record<string, string>;
+        if (ae.entry) ae.entry = sanitizeExpression(ae.entry);
+        if (ae.exit) ae.exit = sanitizeExpression(ae.exit);
+      }
     }
 
     const validation = strategyDefinitionSchema.safeParse(parsed.strategy);
