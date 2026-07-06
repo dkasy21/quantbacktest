@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useSession, signOut } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import AIStrategyInput from '@/components/AIStrategyInput';
@@ -16,6 +16,14 @@ export default function DashboardPage() {
   const [result, setResult] = useState<BacktestResult | null>(null);
   const [bars, setBars] = useState<Bar[]>([]);
   const [symbol, setSymbol] = useState('');
+  const [isPro, setIsPro] = useState(false);
+
+  useEffect(() => {
+    fetch('/api/user/quota')
+      .then(r => r.json())
+      .then(d => { if (!d.error && d.plan === 'pro') setIsPro(true); })
+      .catch(() => {});
+  }, []);
 
   if (status === 'loading') {
     return <main className="min-h-screen flex items-center justify-center">Loading…</main>;
@@ -48,9 +56,11 @@ export default function DashboardPage() {
         <h1 className="text-xl font-bold">QuantBacktest</h1>
         <div className="flex items-center gap-4 text-sm">
           <span className="text-gray-400">{session?.user?.email}</span>
-          <button onClick={upgrade} className="text-brand-500 hover:underline">
-            Upgrade to Pro
-          </button>
+          {!isPro && (
+            <button onClick={upgrade} className="text-brand-500 hover:underline">
+              Upgrade to Pro
+            </button>
+          )}
           <button
             onClick={() => signOut({ callbackUrl: '/' })}
             className="text-gray-400 hover:underline"
