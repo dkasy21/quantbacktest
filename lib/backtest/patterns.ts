@@ -258,3 +258,57 @@ export function killZone(
     return hour >= startHourUtc || hour < endHourUtc;
   });
 }
+
+
+// ---- Opening Range Breakout -----------------------------------------------
+// Identifies the high/low of the first `rangeBars` bars after the session
+// open (startHourUtc:startMinuteUtc UTC). After the range is formed, returns
+// true on bars where close crosses beyond the range boundary.
+// Resets each new UTC calendar day (suitable for US equities at 9:30 AM ET).
+export function openingRangeBreakout(
+  bars: Bar[],
+  startHourUtc = 13,
+  startMinuteUtc = 30,
+  rangeBars = 1
+): { bullish: BoolSeries; bearish: BoolSeries } {
+  const bullish = emptyBool(bars.length);
+  const bearish = emptyBool(bars.length);
+  const startMinutesTotal = startHourUtc * 60 + startMinuteUtc;
+  let currentUtcDay = -1;
+  let orbHigh = -Infinity;
+  let orbLow = Infinity;
+  let orbBarCount = 0;
+  let orbFormed = false;
+
+  for (let i = 0; i < bars.length; i++) {
+    const d = new Date(bars[i].time * 1000);
+    const utcDay = d.getUTCDate();
+    const barMin = d.getUTCHours() * 60 + d.getUTCMinutes();
+
+    // New UTC day = new session
+    if (utcDay !== currentUtcDay) {
+      currentUtcDay = utcDay;
+      orbHigh = -Infinity;
+      orbLow = Infinity;
+      orbBarCount = 0;
+      orbFormed = false;
+    }
+
+    if (barMin < startMinutesTotal) continue; // before session open
+
+    if (!orbFormed) {
+      // Building the opening range
+      orbHigh = Math.max(orbHigh, bars[i].high);
+      orbLow = Math.min(orbLow, bars[i].low);
+      orbBarCount++;
+      if (orbBarCount >= rangeBars) orbFormed = true;
+      // Leave null during range formation
+    } else {
+      // ORB is set — check breakouts on every subsequent bar
+      bullish[i] = bars[i].close > orbHigh;
+      bearish[i] = bars[i].close < orbLow;
+    }
+  }
+
+  return { bullish, bearish };
+}
