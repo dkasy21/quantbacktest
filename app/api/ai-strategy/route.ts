@@ -28,7 +28,7 @@ const SYSTEM_PROMPT = `You are a quantitative trading strategy parser. The user 
 - fvg_bearish: Bearish Fair Value Gap present
 - order_block_bullish: Bullish order block. Params: { lookahead: 3, impulseMultiple: 1.5, avgRangePeriod: 14 }
 - order_block_bearish: Bearish order block. Same params.
-- bos_bullish: Break of Structure bullish (price breaks above recent swing high). Params: { swingLookback: 2 }
+- bos_bullish: Break of Structure bullish. Params: { swingLookback: 2 }
 - bos_bearish: Break of Structure bearish. Same params.
 - liquidity_sweep_high: Liquidity sweep of highs. Params: { swingLookback: 2 }
 - liquidity_sweep_low: Liquidity sweep of lows. Same params.
@@ -37,9 +37,6 @@ const SYSTEM_PROMPT = `You are a quantitative trading strategy parser. The user 
 - premium_zone: Price in upper half of recent range (boolean). Params: { rangePeriod: 20 }
 - discount_zone: Price in lower half of recent range (boolean). Params: { rangePeriod: 20 }
 - kill_zone: Active during UTC hour window (boolean). Params: { startHourUtc: 12, endHourUtc: 15 }
-  - NY session open = startHourUtc: 13, endHourUtc: 14 (9:30-10:00 ET = 13:30-14:00 UTC)
-  - London session = startHourUtc: 7, endHourUtc: 10
-  - Asian session = startHourUtc: 0, endHourUtc: 4
 
 ## StrategyDefinition schema
 {
@@ -49,16 +46,8 @@ const SYSTEM_PROMPT = `You are a quantitative trading strategy parser. The user 
   "signals": [{ "id": string, "kind": SignalKind, "params"?: Record<string, number> }],
   "entry": ConditionGroup,
   "exit": ConditionGroup,
-  "advancedExpression"?: {
-    "entry"?: string,
-    "exit"?: string
-  },
-  "risk": {
-    "positionSizePct": number,
-    "stopLossPct"?: number,
-    "takeProfitPct"?: number,
-    "maxBarsInTrade"?: number
-  },
+  "advancedExpression"?: { "entry"?: string, "exit"?: string },
+  "risk": { "positionSizePct": number, "stopLossPct"?: number, "takeProfitPct"?: number, "maxBarsInTrade"?: number },
   "initialCapital": number
 }
 
@@ -67,78 +56,61 @@ Condition: { "type": "condition", "left": {"signalId": string}, "operator": "gt"
 
 ## Key rules
 - When using advancedExpression, set entry/exit ConditionGroup to { "type": "group", "logic": "AND", "children": [] }
-- Boolean signals (ICT/Structure + volume_spike) MUST use is_true/is_false in conditions, or just the id bare in advancedExpression strings
+- Boolean signals MUST use is_true/is_false in conditions, or just the id bare in advancedExpression strings
 - Numeric signals use gt/gte/lt/lte/crosses_above/crosses_below
-- For "opening range breakout" strategies: use kill_zone for the session, bos_bullish/bos_bearish for the breakout, discount_zone/premium_zone for the retest
-- For "break and retest": approximate as bos_bullish followed by discount_zone (pulled back to discount = retested the level)
 - Always include sensible risk: stopLossPct and takeProfitPct
-- maxBarsInTrade is useful for intraday strategies
 
 ## CRITICAL — advancedExpression rules
-- NEVER use subscript, array, or lookback notation. close[1], sma[5], ema_20[2] etc. are ALL FORBIDDEN.
-- The evaluator only understands: signal_id comparisons, numbers, and operators > >= < <= == != && || !
-- Reference signal ids exactly as defined in the "signals" array (e.g. if id is "rsi_1", write "rsi_1 < 30")
-- Do NOT append [0], [1], or any bracket after a signal id or price variable
+- NEVER use subscript/array/lookback notation like close[1], sma[5]. FORBIDDEN.
+- Only use: signal_id comparisons, numbers, operators > >= < <= == != && || !
+- Reference signal ids exactly as defined in the signals array
 
-## Output — respond with ONLY valid JSON, no markdown, no extra text:
-{
-  "interpretation": "2-4 sentences: what you understood, how you mapped it, any limitations",
-  "strategy": { ...complete StrategyDefinition... }
-}`;
+## Output format — respond with ONLY a valid JSON object, no markdown, no explanation, no code blocks:
+{"interpretation":"...","strategy":{...}}`;
 
-// Strip any lookback/subscript notation like close[1] or sma_20[2] from expression strings
 function sanitizeExpression(expr: string): string {
   return expr.replace(/\[\d+\]/g, '');
+}
+
+function extractJson(text: string): string {
+  // Strip markdown code fences
+  let s = text.replace(/^```(?:json)?\s*/im, '').replace(/\s*```\s*$/im, '').trim();
+  // Find the outermost JSON object
+  const start = s.indexOf('{');
+  const end = s.lastIndexOf('}');
+  if (start !== -1 && end !== -1 && end > start) {
+    s = s.slice(start, end + 1);
+  }
+  return s;
 }
 
 export async function POST(req: Request) {
   const session = await getServerSession(authOptions);
   const userId = (session?.user as { id?: string } | undefined)?.id;
-  if (!userId) {
-    return NextResponse.json({ error: 'Not authenticated.' }, { status: 401 });
-  }
+  if (!userId) return NextResponse.json({ error: 'Not authenticated.' }, { status: 401 });
 
   const apiKey = process.env.GROQ_API_KEY;
-  if (!apiKey) {
-    return NextResponse.json(
-      { error: 'AI strategy parsing not configured. Contact support.' },
-      { status: 500 }
-    );
-  }
+  if (!apiKey) return NextResponse.json({ error: 'AI strategy parsing not configured. Contact support.' }, { status: 500 });
 
   let body: { prompt: string; symbol: string; interval: string; startDate: string; endDate: string; initialCapital: number };
-  try {
-    body = await req.json();
-  } catch {
-    return NextResponse.json({ error: 'Invalid JSON.' }, { status: 400 });
-  }
+  try { body = await req.json(); } catch { return NextResponse.json({ error: 'Invalid JSON.' }, { status: 400 }); }
 
   const { prompt, symbol, interval, startDate, endDate, initialCapital } = body;
-  if (!prompt?.trim()) {
-    return NextResponse.json({ error: 'Please describe your strategy.' }, { status: 400 });
-  }
+  if (!prompt?.trim()) return NextResponse.json({ error: 'Please describe your strategy.' }, { status: 400 });
 
   const userMessage = `Strategy description: "${prompt.trim()}"
-
-Symbol: ${symbol || 'SPY'}
-Interval: ${interval || '1d'}
-Start date: ${startDate}
-End date: ${endDate}
-Initial capital: ${initialCapital || 10000}
-
-Convert this strategy into a complete StrategyDefinition JSON. Set symbol to "${symbol || 'SPY'}" and initialCapital to ${initialCapital || 10000}.`;
+Symbol: ${symbol || 'SPY'}, Interval: ${interval || '1d'}, Start: ${startDate}, End: ${endDate}, Capital: ${initialCapital || 10000}
+Output ONLY valid JSON: {"interpretation":"...","strategy":{...}}`;
 
   try {
     const aiResponse = await fetch('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`,
-      },
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
       body: JSON.stringify({
         model: 'llama-3.3-70b-versatile',
         max_tokens: 2048,
         temperature: 0.1,
+        response_format: { type: 'json_object' },
         messages: [
           { role: 'system', content: SYSTEM_PROMPT },
           { role: 'user', content: userMessage },
@@ -157,20 +129,13 @@ Convert this strategy into a complete StrategyDefinition JSON. Set symbol to "${
 
     let parsed: { interpretation: string; strategy: unknown };
     try {
-      const cleaned = text
-        .replace(/^```(?:json)?\s*/m, '')
-        .replace(/\s*```\s*$/m, '')
-        .trim();
-      parsed = JSON.parse(cleaned);
+      parsed = JSON.parse(extractJson(text));
     } catch {
       console.error('Failed to parse AI response:', text);
-      return NextResponse.json(
-        { error: 'AI returned an unparseable response. Try rephrasing your strategy description.' },
-        { status: 502 }
-      );
+      return NextResponse.json({ error: 'AI returned an unparseable response. Try rephrasing your strategy description.' }, { status: 502 });
     }
 
-    // Sanitize advancedExpression to strip any lookback notation the AI might have generated
+    // Sanitize advancedExpression
     if (parsed.strategy && typeof parsed.strategy === 'object') {
       const s = parsed.strategy as Record<string, unknown>;
       if (s.advancedExpression && typeof s.advancedExpression === 'object') {
@@ -183,19 +148,13 @@ Convert this strategy into a complete StrategyDefinition JSON. Set symbol to "${
     const validation = strategyDefinitionSchema.safeParse(parsed.strategy);
     if (!validation.success) {
       console.error('AI strategy failed validation:', validation.error.issues);
-      return NextResponse.json(
-        {
-          error: 'AI produced an invalid strategy structure. Try being more specific or use a simpler strategy.',
-          details: validation.error.issues[0]?.message,
-        },
-        { status: 422 }
-      );
+      return NextResponse.json({
+        error: 'AI produced an invalid strategy structure. Try being more specific.',
+        details: validation.error.issues[0]?.message,
+      }, { status: 422 });
     }
 
-    return NextResponse.json({
-      interpretation: parsed.interpretation ?? '',
-      strategy: validation.data,
-    });
+    return NextResponse.json({ interpretation: parsed.interpretation ?? '', strategy: validation.data });
   } catch (err) {
     console.error('AI strategy route error:', err);
     return NextResponse.json({ error: 'Failed to parse strategy. Please try again.' }, { status: 500 });
