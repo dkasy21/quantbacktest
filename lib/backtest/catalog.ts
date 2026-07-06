@@ -53,6 +53,8 @@ export const SIGNAL_CATALOG: SignalCatalogEntry[] = [
   { kind: 'premium_zone', label: 'Premium Zone (boolean)', category: 'ICT / Structure', isBoolean: true, params: [{ key: 'rangePeriod', label: 'Range period', default: 20 }] },
   { kind: 'discount_zone', label: 'Discount Zone (boolean)', category: 'ICT / Structure', isBoolean: true, params: [{ key: 'rangePeriod', label: 'Range period', default: 20 }] },
   { kind: 'kill_zone', label: 'Kill Zone / session window (boolean)', category: 'ICT / Structure', isBoolean: true, params: [{ key: 'startHourUtc', label: 'Start hour (UTC)', default: 12 },{ key: 'endHourUtc', label: 'End hour (UTC)', default: 15 }] },
+  { kind: 'orb_bullish', label: 'Opening Range Breakout - bullish', category: 'ICT / Structure', isBoolean: true, params: [{ key: 'startHourUtc', label: 'Session start hour (UTC)', default: 13 },{ key: 'startMinuteUtc', label: 'Session start minute (UTC)', default: 30 },{ key: 'rangeBars', label: 'Range bars', default: 1 }] },
+  { kind: 'orb_bearish', label: 'Opening Range Breakout - bearish', category: 'ICT / Structure', isBoolean: true, params: [{ key: 'startHourUtc', label: 'Session start hour (UTC)', default: 13 },{ key: 'startMinuteUtc', label: 'Session start minute (UTC)', default: 30 },{ key: 'rangeBars', label: 'Range bars', default: 1 }] },
 ];
 
 export function catalogEntry(kind: SignalKind): SignalCatalogEntry {
