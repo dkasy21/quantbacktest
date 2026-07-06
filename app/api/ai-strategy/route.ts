@@ -40,6 +40,8 @@ const SYSTEM_PROMPT = `You are a quantitative trading strategy parser. The user 
   - NY session open = startHourUtc: 13, endHourUtc: 14 (9:30-10:00 ET = 13:30-14:00 UTC)
   - London session = startHourUtc: 7, endHourUtc: 10
   - Asian session = startHourUtc: 0, endHourUtc: 4
+- orb_bullish: Opening Range Breakout bullish — true when close > opening range high. USE THIS for any ORB/opening range breakout strategy. Params: { startHourUtc: 13, startMinuteUtc: 30, rangeBars: 1 }
+- orb_bearish: Opening Range Breakout bearish — true when close < opening range low. Same params.
 
 ## StrategyDefinition schema
 {
@@ -69,7 +71,7 @@ Condition: { "type": "condition", "left": {"signalId": string}, "operator": "gt"
 - When using advancedExpression, set entry/exit ConditionGroup to { "type": "group", "logic": "AND", "children": [] }
 - Boolean signals (ICT/Structure + volume_spike) MUST use is_true/is_false in conditions, or just the id bare in advancedExpression strings
 - Numeric signals use gt/gte/lt/lte/crosses_above/crosses_below
-- For "opening range breakout" strategies: use kill_zone for the session, bos_bullish/bos_bearish for the breakout, discount_zone/premium_zone for the retest
+- For ANY "opening range breakout" or "ORB" strategy: use orb_bullish/orb_bearish signals — they automatically track the first bar's high/low and fire on breakouts. Do NOT use bos_bullish + kill_zone for ORB.
 - For "break and retest": approximate as bos_bullish followed by discount_zone (pulled back to discount = retested the level)
 - Always include sensible risk: stopLossPct and takeProfitPct
 - maxBarsInTrade is useful for intraday strategies
@@ -88,14 +90,17 @@ Condition: { "type": "condition", "left": {"signalId": string}, "operator": "gt"
 }`;
 
 function sanitizeExpression(expr: string): string {
+  // Strip any lookback notation like [1], [0], [2] that LLMs sometimes generate
   return expr.replace(/\[\d+\]/g, '');
 }
 
 function extractJson(text: string): string {
+  // Strip markdown code fences if present
   let s = text
     .replace(/^```(?:json)?\s*/im, '')
     .replace(/\s*```\s*$/im, '')
     .trim();
+  // Find outermost { ... }
   const start = s.indexOf('{');
   const end = s.lastIndexOf('}');
   if (start !== -1 && end !== -1 && end > start) {
@@ -181,6 +186,7 @@ Convert this strategy into a complete StrategyDefinition JSON. Set symbol to "${
       );
     }
 
+    // Sanitize any accidental lookback notation in advancedExpression
     if (parsed.strategy?.advancedExpression) {
       const ae = parsed.strategy.advancedExpression;
       if (ae.entry) ae.entry = sanitizeExpression(ae.entry);
