@@ -5,38 +5,8 @@ export type Operator = 'gt'|'gte'|'lt'|'lte'|'eq'|'neq'|'crosses_above'|'crosses
 export interface SignalRef { signalId: string; }
 export interface Condition { type: 'condition'; left: SignalRef; operator: Operator; right?: SignalRef|number; }
 export interface ConditionGroup { type: 'group'; logic: 'AND'|'OR'; children: (Condition|ConditionGroup)[]; }
-export function isGroup(c: unknown): c is ConditionGroup { return (c as { type: string }).type === 'group'; }
+export function isGroup(c) { return c.type === 'group'; }
 export interface RiskSettings { positionSizePct: number; stopLossPct?: number; takeProfitPct?: number; maxBarsInTrade?: number; }
-export interface StrategyDefinition {
-  name: string;
-  symbol: string;
-  direction: 'long'|'short'|'both';
-  signals: SignalSpec[];
-  entry: ConditionGroup;
-  exit: ConditionGroup;
-  advancedExpression?: {
-    entry?: string;
-    exit?: string;
-    entryLong?: string;
-    entryShort?: string;
-  };
-  risk: RiskSettings;
-  initialCapital: number;
-}
+export interface StrategyDefinition { name: string; symbol: string; direction: 'long'|'short'|'both'; signals: SignalSpec[]; entry: ConditionGroup; exit: ConditionGroup; advancedExpression?: { entry?: string; exit?: string; }; risk: RiskSettings; initialCapital: number; }
 export interface Trade { direction: 'long'|'short'; entryIndex: number; entryTime: number; entryPrice: number; exitIndex: number; exitTime: number; exitPrice: number; exitReason: 'signal'|'stop_loss'|'take_profit'|'max_bars'|'end_of_data'; size: number; pnl: number; pnlPct: number; }
-export interface BacktestResult {
-  trades: Trade[];
-  equityCurve: { time: number; equity: number; }[];
-  metrics: {
-    totalReturnPct: number;
-    finalEquity: number;
-    totalTrades: number;
-    winRate: number;
-    profitFactor: number;
-    avgWinPct: number;
-    avgLossPct: number;
-    maxDrawdownPct: number;
-    sharpeRatio: number;
-    sortinoRatio: number;
-  };
-}
+export interface BacktestResult { trades: Trade[]; equityCurve: { time: number; equity: number; }[]; metrics: { totalReturnPct: number; finalEquity: number; totalTrades: number; winRate: number; profitFactor: number; avgWinPct: number; avgLossPct: number; maxDrawdownPct: number; sharpeRatio: number; }; }
