@@ -17,12 +17,19 @@ export default function DashboardPage() {
   const [bars, setBars] = useState<Bar[]>([]);
   const [symbol, setSymbol] = useState('');
   const [isPro, setIsPro] = useState(false);
+  // Was missing before the 2026-07-06 audit: isPro defaulted to false and the
+  // header rendered "Upgrade to Pro" immediately on every load — including for
+  // paying Pro users — until the /api/user/quota fetch resolved a moment
+  // later. planLoaded gates the button so it never shows an answer we don't
+  // have yet.
+  const [planLoaded, setPlanLoaded] = useState(false);
 
   useEffect(() => {
     fetch('/api/user/quota')
       .then(r => r.json())
       .then(d => { if (!d.error && d.plan === 'pro') setIsPro(true); })
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => setPlanLoaded(true));
   }, []);
 
   if (status === 'loading') {
@@ -56,7 +63,7 @@ export default function DashboardPage() {
         <h1 className="text-xl font-bold">QuantBacktest</h1>
         <div className="flex items-center gap-4 text-sm">
           <span className="text-gray-400">{session?.user?.email}</span>
-          {!isPro && (
+          {planLoaded && !isPro && (
             <button onClick={upgrade} className="text-brand-500 hover:underline">
               Upgrade to Pro
             </button>
