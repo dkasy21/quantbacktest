@@ -22,6 +22,11 @@ const SYSTEM_PROMPT = `You are a quantitative trading strategy parser. The user 
 - vwap: VWAP session value (numeric)
 - rel_volume: Volume ratio vs MA (numeric). Params: { period: 20 }
 - volume_spike: Boolean, true when volume spikes. Params: { period: 20, multiplier: 2 }
+- of_delta: Orderflow delta — taker buy volume minus sell volume for the bar (numeric). CRYPTO SYMBOLS ONLY (e.g. BTC, ETH, SOL, or any Binance.US pair like BTCUSD) — resolves to null on stocks/forex/futures.
+- of_cvd: Cumulative Volume Delta — running total of of_delta since the start of the loaded range (numeric). CRYPTO ONLY.
+- of_buy_ratio: Fraction of bar volume that was taker-buy, 0-1 (numeric). 0.5 = balanced, >0.5 = buy-dominant. CRYPTO ONLY.
+- of_delta_divergence_bullish: Boolean — price makes a lower swing low while CVD makes a higher swing low (sellers exhausting into a dip). Params: { swingLookback: 2 }. CRYPTO ONLY.
+- of_delta_divergence_bearish: Boolean — price makes a higher swing high while CVD makes a lower swing high (buyers exhausting into a rally). Params: { swingLookback: 2 }. CRYPTO ONLY.
 
 ### ICT / Structure (boolean — use operator is_true or is_false)
 - fvg_bullish: Bullish Fair Value Gap present
@@ -73,8 +78,10 @@ Condition: { "type": "condition", "left": {"signalId": string}, "operator": "gt"
 - Numeric signals use gt/gte/lt/lte/crosses_above/crosses_below
 - For ANY "opening range breakout" or "ORB" strategy: use orb_bullish/orb_bearish signals — they automatically track the first bar's high/low and fire on breakouts. Do NOT use bos_bullish + kill_zone for ORB.
 - For "break and retest": approximate as bos_bullish followed by discount_zone (pulled back to discount = retested the level)
+- Orderflow signals (of_delta, of_cvd, of_buy_ratio, of_delta_divergence_bullish/bearish) only produce real values for crypto symbols fetched from Binance. If the user asks for an orderflow/delta/CVD strategy on a stock, forex pair, or futures symbol, still build it as requested but mention in "interpretation" that orderflow data isn't available for that symbol and results will show no trades.
 - Always include sensible risk: stopLossPct and takeProfitPct
 - maxBarsInTrade is useful for intraday strategies
+- Stop-loss %, take-profit %, and max-bars-in-trade exits are handled EXCLUSIVELY by the "risk" object (stopLossPct, takeProfitPct, maxBarsInTrade). There are NO signals or variables named bar_number, bar_index, entryBar, entryPrice, currentBar, or similar -- NEVER reference these in advancedExpression or a ConditionGroup. advancedExpression strings may ONLY reference ids from the "signals" array (plus bare open/high/low/close/volume). If the user's prompt mentions "X% stop loss" or "exit after N bars", set the matching risk field and leave it OUT of advancedExpression entirely -- do not also add a clause for it there.
 
 ## CRITICAL — Expression syntax rules
 - advancedExpression strings reference signal IDs only — NO array notation, NO square brackets
