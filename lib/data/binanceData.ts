@@ -1,22 +1,25 @@
-// Binance public spot market data — used for (a) crypto pairs generally,
+// Binance.US public spot market data — used for (a) crypto pairs generally,
 // and (b) as the source of real per-candle orderflow (buy/sell volume
 // split) used by the `of_*` signals in lib/backtest/orderflow.ts.
 //
-// Why Binance specifically: it's a free, public, no-auth REST endpoint
-// (no API key, no card, no signup) that returns actual exchange trade data,
-// not a licensed/redistributed feed — so there's no commercial-use question
-// like there is with Yahoo. Each kline row already includes "taker buy base
-// asset volume," i.e. how much of that candle's volume was buyer-initiated
-// vs seller-initiated. That's a real, exchange-reported buy/sell split —
-// not synthetic — which is enough to compute delta / cumulative volume
-// delta (CVD) without needing full tick-by-tick trade replay or a paid
-// order-book feed. It is NOT full L2/L3 order-book depth (no bid/ask ladder,
-// no queue position) — see the comment atop orderflow.ts for that
-// distinction.
+// IMPORTANT — why .us and not .com: this originally targeted api.binance.com,
+// which is free and public but actively geo-blocks requests from the United
+// States (HTTP 451, "restricted location" per Binance's terms). Vercel's
+// serverless functions for this project run in a US region (iad1), so every
+// request from production/preview came back 451 and silently fell through
+// to the old Yahoo/TwelveData chain — meaning the orderflow feature looked
+// wired up but returned zero real orderflow data. Confirmed via Vercel
+// runtime logs on 2026-07-07. Fix: use api.binance.us instead — same
+// company's US-compliant exchange, not geo-blocked for US server IPs, same
+// kline response shape (including the taker-buy-volume field), just
+// different pair naming: USD pairs (BTCUSD, ETHUSD) instead of USDT pairs
+// (BTCUSDT, ETHUSDT). Binance.US doesn't list every pair Binance.com does
+// (e.g. no BUSD pairs), but covers all the majors this integration maps —
+// verified live against its /exchangeInfo endpoint.
 //
-// Docs: https://developers.binance.com/docs/binance-spot-api-docs/rest-api/market-data-endpoints#klinecandlestick-data
+// Docs: https://docs.binance.us/
 // Rate limits are generous for this use case (klines has a low request
-// weight; see docs) and require no authentication for market data.
+// weight) and require no authentication for market data.
 
 import type { Bar } from '../backtest/types';
 import type { Interval } from './yahooData';
@@ -29,7 +32,7 @@ export interface FetchBarsParams {
   endDate: string;
 }
 
-const API_BASE = 'https://api.binance.com/api/v3/klines';
+const API_BASE = 'https://api.binance.us/api/v3/klines';
 
 // Binance supports these intervals natively — unlike Databento, no
 // resampling is needed for any interval this app uses.
@@ -41,22 +44,23 @@ const INTERVAL_MAP: Record<Interval, string> = {
   '5m': '5m',
 };
 
-// Friendly aliases -> Binance's USDT spot pair naming. Anything already
-// shaped like a Binance pair (e.g. "BTCUSDT", "SOLUSDT") is passed through
-// as-is by supportsSymbol()/toBinanceSymbol() below.
+// Friendly aliases -> Binance.US's USD spot pair naming. Anything already
+// shaped like a Binance.US pair (e.g. "BTCUSD", "SOLUSD") is passed through
+// as-is by supportsSymbol()/toBinanceSymbol() below. Note this is USD, not
+// USDT — Binance.US's majors trade against USD, not Tether.
 const ALIAS_MAP: Record<string, string> = {
-  BTC: 'BTCUSDT', BTCUSD: 'BTCUSDT', BITCOIN: 'BTCUSDT',
-  ETH: 'ETHUSDT', ETHUSD: 'ETHUSDT',
-  SOL: 'SOLUSDT', SOLUSD: 'SOLUSDT',
-  XRP: 'XRPUSDT', XRPUSD: 'XRPUSDT',
-  DOGE: 'DOGEUSDT', DOGEUSD: 'DOGEUSDT',
-  ADA: 'ADAUSDT', ADAUSD: 'ADAUSDT',
-  BNB: 'BNBUSDT', BNBUSD: 'BNBUSDT',
-  AVAX: 'AVAXUSDT', LINK: 'LINKUSDT', LTC: 'LTCUSDT',
-  MATIC: 'MATICUSDT', DOT: 'DOTUSDT', TRX: 'TRXUSDT',
+  BTC: 'BTCUSD', BITCOIN: 'BTCUSD',
+  ETH: 'ETHUSD',
+  SOL: 'SOLUSD',
+  XRP: 'XRPUSD',
+  DOGE: 'DOGEUSD',
+  ADA: 'ADAUSD',
+  BNB: 'BNBUSD',
+  AVAX: 'AVAXUSD', LINK: 'LINKUSD', LTC: 'LTCUSD',
+  MATIC: 'MATICUSD', DOT: 'DOTUSD', TRX: 'TRXUSD',
 };
 
-const DIRECT_PAIR_RE = /^[A-Z0-9]{2,15}(USDT|USDC|BUSD)$/;
+const DIRECT_PAIR_RE = /^[A-Z0-9]{2,15}(USD|USDT|USDC|BUSD)$/;
 
 export function supportsSymbol(raw: string): boolean {
   const s = raw.toUpperCase();
