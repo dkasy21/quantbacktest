@@ -81,6 +81,7 @@ Condition: { "type": "condition", "left": {"signalId": string}, "operator": "gt"
 - Orderflow signals (of_delta, of_cvd, of_buy_ratio, of_delta_divergence_bullish/bearish) only produce real values for crypto symbols fetched from Binance. If the user asks for an orderflow/delta/CVD strategy on a stock, forex pair, or futures symbol, still build it as requested but mention in "interpretation" that orderflow data isn't available for that symbol and results will show no trades.
 - Always include sensible risk: stopLossPct and takeProfitPct
 - maxBarsInTrade is useful for intraday strategies
+- Stop-loss %, take-profit %, and max-bars-in-trade exits are handled EXCLUSIVELY by the "risk" object (stopLossPct, takeProfitPct, maxBarsInTrade). There are NO signals or variables named bar_number, bar_index, entryBar, entryPrice, currentBar, or similar -- NEVER reference these in advancedExpression or a ConditionGroup. advancedExpression strings may ONLY reference ids from the "signals" array (plus bare open/high/low/close/volume). If the user's prompt mentions "X% stop loss" or "exit after N bars", set the matching risk field and leave it OUT of advancedExpression entirely -- do not also add a clause for it there.
 
 ## CRITICAL — Expression syntax rules
 - advancedExpression strings reference signal IDs only — NO array notation, NO square brackets
