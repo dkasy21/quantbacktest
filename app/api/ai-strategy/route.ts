@@ -22,7 +22,7 @@ const SYSTEM_PROMPT = `You are a quantitative trading strategy parser. The user 
 - vwap: VWAP session value (numeric)
 - rel_volume: Volume ratio vs MA (numeric). Params: { period: 20 }
 - volume_spike: Boolean, true when volume spikes. Params: { period: 20, multiplier: 2 }
-- of_delta: Orderflow delta — taker buy volume minus sell volume for the bar (numeric). CRYPTO SYMBOLS ONLY (e.g. BTC, ETH, SOL, or any Binance pair like BTCUSDT) — resolves to null on stocks/forex/futures.
+- of_delta: Orderflow delta — taker buy volume minus sell volume for the bar (numeric). CRYPTO SYMBOLS ONLY (e.g. BTC, ETH, SOL, or any Binance.US pair like BTCUSD) — resolves to null on stocks/forex/futures.
 - of_cvd: Cumulative Volume Delta — running total of of_delta since the start of the loaded range (numeric). CRYPTO ONLY.
 - of_buy_ratio: Fraction of bar volume that was taker-buy, 0-1 (numeric). 0.5 = balanced, >0.5 = buy-dominant. CRYPTO ONLY.
 - of_delta_divergence_bullish: Boolean — price makes a lower swing low while CVD makes a higher swing low (sellers exhausting into a dip). Params: { swingLookback: 2 }. CRYPTO ONLY.
