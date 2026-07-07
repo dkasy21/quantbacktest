@@ -5,6 +5,7 @@ import type { Bar, SignalSpec } from './types';
 import * as ind from './indicators';
 import * as vol from './volume';
 import * as pat from './patterns';
+import * as of from './orderflow';
 
 export type ResolvedValue = number | boolean | null;
 export type SignalTable = Record<string, ResolvedValue[]>;
@@ -70,6 +71,11 @@ export function buildSignalTable(bars: Bar[], specs: SignalSpec[]): SignalTable 
       case 'kill_zone': table[spec.id] = pat.killZone(bars, num('startHourUtc', 12), num('endHourUtc', 15)); break;
       case 'orb_bullish': table[spec.id] = pat.openingRangeBreakout(bars, num('startHourUtc', 13), num('startMinuteUtc', 30), num('rangeBars', 1)).bullish; break;
       case 'orb_bearish': table[spec.id] = pat.openingRangeBreakout(bars, num('startHourUtc', 13), num('startMinuteUtc', 30), num('rangeBars', 1)).bearish; break;
+      case 'of_delta': table[spec.id] = of.delta(bars); break;
+      case 'of_cvd': table[spec.id] = of.cumulativeDelta(bars); break;
+      case 'of_buy_ratio': table[spec.id] = of.buyRatio(bars); break;
+      case 'of_delta_divergence_bullish': table[spec.id] = of.deltaDivergence(bars, num('swingLookback', 2)).bullish; break;
+      case 'of_delta_divergence_bearish': table[spec.id] = of.deltaDivergence(bars, num('swingLookback', 2)).bearish; break;
       default: throw new Error(`Unknown signal kind: ${spec.kind}`);
     }
   }
