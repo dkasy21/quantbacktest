@@ -5,6 +5,8 @@
 // run successfully. Run with: npm run test:engine
 import { sma, ema, rsi } from '../lib/backtest/indicators';
 import { runBacktest } from '../lib/backtest/engine';
+import { delta, cumulativeDelta, buyRatio } from '../lib/backtest/orderflow';
+import type { Bar } from '../lib/backtest/types';
 
 let failures = 0;
 function chk(act: number, exp: number, tol: number, lbl: string) {
@@ -79,6 +81,35 @@ function chk(act: number, exp: number, tol: number, lbl: string) {
     failures++;
   } else {
     console.log(`PASS: ${r.trades.length} trades generated`);
+  }
+}
+
+{
+  // 2026-07-07: orderflow signals added for crypto (Binance taker buy/sell
+  // split). Verify delta/CVD/buy-ratio math on a synthetic bar with a known
+  // buyVolume, and that bars without buyVolume (every non-Binance source)
+  // resolve to null instead of throwing or silently defaulting to 0.
+  const withOrderflow: Bar[] = [
+    { time: 1, open: 100, high: 101, low: 99, close: 100, volume: 100, buyVolume: 70 },
+    { time: 2, open: 100, high: 101, low: 99, close: 100, volume: 100, buyVolume: 30 },
+  ];
+  const d = delta(withOrderflow);
+  chk(d[0] as number, 40, 1e-9, 'orderflow delta (70 buy - 30 sell)');
+  chk(d[1] as number, -40, 1e-9, 'orderflow delta (30 buy - 70 sell)');
+
+  const cvd = cumulativeDelta(withOrderflow);
+  chk(cvd[0] as number, 40, 1e-9, 'CVD after bar 1');
+  chk(cvd[1] as number, 0, 1e-9, 'CVD after bar 2 (running total back to 0)');
+
+  const ratio = buyRatio(withOrderflow);
+  chk(ratio[0] as number, 0.7, 1e-9, 'buy ratio (70/100)');
+
+  const withoutOrderflow: Bar[] = [{ time: 1, open: 100, high: 101, low: 99, close: 100, volume: 100 }];
+  if (delta(withoutOrderflow)[0] !== null) {
+    console.error('FAIL: delta() should be null for bars with no buyVolume (non-Binance sources)');
+    failures++;
+  } else {
+    console.log('PASS: orderflow signals resolve to null on non-crypto bars');
   }
 }
 
