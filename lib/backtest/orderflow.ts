@@ -89,3 +89,26 @@ export function deltaDivergence(
   }
   return { bullish, bearish };
 }
+
+/**
+ * CVD trend: true when cumulative volume delta has net risen (rising) or
+ * net fallen (falling) over the last `lookback` bars — i.e. CVD now vs.
+ * CVD `lookback` bars ago. This exists because the expression evaluator
+ * has no lookback/history access (see expr.ts), so "CVD is rising" can't
+ * be written as an inline expression — it needs to be a precomputed
+ * boolean signal like the other trend/pattern booleans (fvg_bullish,
+ * bos_bullish, etc.).
+ */
+export function cvdTrend(bars: Bar[], lookback = 5): { rising: BoolSeries; falling: BoolSeries } {
+  const cvd = cumulativeDelta(bars);
+  const rising: BoolSeries = new Array(bars.length).fill(null);
+  const falling: BoolSeries = new Array(bars.length).fill(null);
+  for (let i = lookback; i < bars.length; i++) {
+    const now = cvd[i];
+    const prev = cvd[i - lookback];
+    if (now === null || prev === null) continue;
+    rising[i] = now > prev;
+    falling[i] = now < prev;
+  }
+  return { rising, falling };
+}

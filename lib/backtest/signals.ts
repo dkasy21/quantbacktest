@@ -76,6 +76,8 @@ export function buildSignalTable(bars: Bar[], specs: SignalSpec[]): SignalTable 
       case 'of_buy_ratio': table[spec.id] = of.buyRatio(bars); break;
       case 'of_delta_divergence_bullish': table[spec.id] = of.deltaDivergence(bars, num('swingLookback', 2)).bullish; break;
       case 'of_delta_divergence_bearish': table[spec.id] = of.deltaDivergence(bars, num('swingLookback', 2)).bearish; break;
+      case 'of_cvd_rising': table[spec.id] = of.cvdTrend(bars, num('lookback', 5)).rising; break;
+      case 'of_cvd_falling': table[spec.id] = of.cvdTrend(bars, num('lookback', 5)).falling; break;
       default: throw new Error(`Unknown signal kind: ${spec.kind}`);
     }
   }

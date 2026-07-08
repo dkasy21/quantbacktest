@@ -5,7 +5,7 @@
 // run successfully. Run with: npm run test:engine
 import { sma, ema, rsi } from '../lib/backtest/indicators';
 import { runBacktest } from '../lib/backtest/engine';
-import { delta, cumulativeDelta, buyRatio } from '../lib/backtest/orderflow';
+import { delta, cumulativeDelta, cvdTrend, buyRatio } from '../lib/backtest/orderflow';
 import type { Bar } from '../lib/backtest/types';
 
 let failures = 0;
@@ -111,6 +111,41 @@ function chk(act: number, exp: number, tol: number, lbl: string) {
   } else {
     console.log('PASS: orderflow signals resolve to null on non-crypto bars');
   }
+{
+  // 2026-07-08: of_cvd_rising / of_cvd_falling added so the AI parser has a
+  // real signal for "CVD is rising/falling" trend language instead of
+  // hallucinating a lookback the expression evaluator doesn't support.
+  // Build 6 bars of steadily rising CVD (delta = +20/bar) and 6 of steadily
+  // falling CVD (delta = -20/bar), and confirm rising/falling flip correctly.
+  const mkBars = (buyVolume: number, n: number): Bar[] =>
+    Array.from({ length: n }, (_, i) => ({ time: i + 1, open: 100, high: 101, low: 99, close: 100, volume: 100, buyVolume }));
+
+  const risingBars = mkBars(60, 6); // delta = 60-40 = +20/bar
+  const risingTrend = cvdTrend(risingBars, 3);
+  if (risingTrend.rising[3] !== true || risingTrend.falling[3] !== false) {
+    console.error('FAIL: of_cvd_rising should be true (and falling false) on a steadily rising CVD series');
+    failures++;
+  } else {
+    console.log('PASS: cvdTrend detects a rising CVD series');
+  }
+
+  const fallingBars = mkBars(40, 6); // delta = 40-60 = -20/bar
+  const fallingTrend = cvdTrend(fallingBars, 3);
+  if (fallingTrend.falling[3] !== true || fallingTrend.rising[3] !== false) {
+    console.error('FAIL: of_cvd_falling should be true (and rising false) on a steadily falling CVD series');
+    failures++;
+  } else {
+    console.log('PASS: cvdTrend detects a falling CVD series');
+  }
+
+  if (risingTrend.rising[1] !== null) {
+    console.error('FAIL: cvdTrend should be null before `lookback` bars have elapsed');
+    failures++;
+  } else {
+    console.log('PASS: cvdTrend resolves to null before enough history exists');
+  }
+}
+
 }
 
 console.log(failures === 0 ? 'All checks passed.' : `${failures} FAILED.`);
