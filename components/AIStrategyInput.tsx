@@ -20,6 +20,20 @@ function isProSymbol(sym: string): boolean {
   return PRO_SYMBOLS.has(s) || s.endsWith('=F') || s.startsWith('^') || s.startsWith('DX-');
 }
 
+// Crypto tickers that resolve to Binance.US and carry real orderflow data
+// (delta, CVD, buy ratio, divergence). Kept in sync manually with
+// lib/plan.ts's ORDERFLOW_SYMBOLS -- duplicated the same way PRO_SYMBOLS
+// already is, since this is a client component and shouldn't import the
+// server-side plan/data modules just for a symbol check.
+const ORDERFLOW_SYMBOLS = new Set([
+  'BTC', 'ETH', 'SOL', 'XRP', 'DOGE', 'ADA', 'BNB', 'AVAX', 'LINK', 'LTC', 'MATIC', 'DOT', 'TRX',
+]);
+
+function supportsOrderflow(sym: string): boolean {
+  const s = sym.toUpperCase();
+  return ORDERFLOW_SYMBOLS.has(s) || /^[A-Z0-9]{2,15}(USD|USDT|USDC|BUSD)$/.test(s);
+}
+
 const EXAMPLES = [
   { label: 'RSI + Trend', text: 'Go long when RSI drops below 30 and price is above the 200-day SMA. Exit when RSI rises above 70. Use a 2% stop loss and 6% take profit.' },
   { label: 'MACD Cross', text: 'Enter long when the MACD line crosses above the signal line. Exit when MACD crosses below. 10% position size.' },
@@ -35,7 +49,7 @@ const POPULAR_SYMBOLS = [
   { label: 'VIX', desc: 'Volatility' }, { label: 'XAUUSD', desc: 'Gold' },
   { label: 'XAGUSD', desc: 'Silver' }, { label: 'CL', desc: 'Crude Oil' },
   { label: 'EURUSD', desc: 'EUR/USD' }, { label: 'DXY', desc: 'Dollar Index' },
-  { label: 'BTC', desc: 'Bitcoin' }, { label: 'ETH', desc: 'Ethereum' },
+  { label: 'BTC', desc: 'Bitcoin' }, { label: 'ETH', desc: 'Ethereum' }, { label: 'SOL', desc: 'Solana' },
   { label: 'SPY', desc: 'S&P 500 ETF' }, { label: 'QQQ', desc: 'Nasdaq ETF' },
   { label: 'AAPL', desc: 'Apple' }, { label: 'TSLA', desc: 'Tesla' }, { label: 'NVDA', desc: 'Nvidia' },
 ];
@@ -62,7 +76,7 @@ export default function AIStrategyInput({ onResult }: AIStrategyInputProps) {
   const [error, setError] = useState<string | null>(null);
   const [interpretation, setInterpretation] = useState<string | null>(null);
   const [quota, setQuota] = useState<QuotaData | null>(null);
-  const [upgradeModal, setUpgradeModal] = useState<{ open: boolean; reason: 'futures' | 'quota' }>({ open: false, reason: 'futures' });
+  const [upgradeModal, setUpgradeModal] = useState<{ open: boolean; reason: 'futures' | 'quota' | 'orderflow' }>({ open: false, reason: 'futures' });
 
   useEffect(() => {
     fetch('/api/user/quota').then(r => r.json()).then(d => { if (!d.error) setQuota(d); }).catch(() => {});
@@ -71,8 +85,8 @@ export default function AIStrategyInput({ onResult }: AIStrategyInputProps) {
   const isPro = quota?.plan === 'pro';
   // quota is null until the /api/user/quota fetch resolves. Gating on
   // `quota !== null` (not just `!isPro`) stops a Pro user from briefly seeing
-  // futures symbols as locked — or worse, having a click during that window
-  // pop the "Pro Plan Required" modal — before we actually know their plan.
+  // futures symbols as locked -- or worse, having a click during that window
+  // pop the "Pro Plan Required" modal -- before we actually know their plan.
   // Fixed during the 2026-07-06 audit.
   const planKnown = quota !== null;
 
@@ -95,7 +109,7 @@ export default function AIStrategyInput({ onResult }: AIStrategyInputProps) {
       // orb_bearish are defined in terms of a bar's time-of-day and only make
       // sense with more than one bar per session. On Daily bars there is
       // exactly one bar per session, so these signals can never fire and the
-      // backtest silently comes back with zero trades — which, for the "ICT
+      // backtest silently comes back with zero trades -- which, for the "ICT
       // / ORB" example specifically, is the very first thing a new user is
       // likely to click. If the parsed strategy uses one of these and the
       // request was Daily, re-run the backtest on 15-minute bars instead and
@@ -112,13 +126,13 @@ export default function AIStrategyInput({ onResult }: AIStrategyInputProps) {
         effectiveStartDate = getDefaultStart('15m');
         setInterval('15m');
         setStartDate(effectiveStartDate);
-        noteSuffix = ' (Switched to 15-minute bars automatically — kill-zone/opening-range signals need intraday data and would never trigger on Daily bars.)';
+        noteSuffix = ' (Switched to 15-minute bars automatically -- kill-zone/opening-range signals need intraday data and would never trigger on Daily bars.)';
       }
       setInterpretation((aiData.interpretation ?? '') + noteSuffix);
       setStage('backtesting');
       const btRes = await fetch('/api/backtest', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ strategy: aiData.strategy, startDate: effectiveStartDate, endDate, interval: effectiveInterval }) });
       const btData = await btRes.json();
-      if (btRes.status === 403) { setUpgradeModal({ open: true, reason: 'futures' }); return; }
+      if (btRes.status === 403) { setUpgradeModal({ open: true, reason: btData.lockReason === 'orderflow' ? 'orderflow' : 'futures' }); return; }
       if (btRes.status === 429) { setUpgradeModal({ open: true, reason: 'quota' }); fetch('/api/user/quota').then(r => r.json()).then(d => { if (!d.error) setQuota(d); }); return; }
       if (!btRes.ok) { setError(btData.error ?? 'Backtest failed.'); return; }
       if (quota?.plan === 'free' && btData.remainingQuota !== undefined) setQuota(q => q ? { ...q, remaining: btData.remainingQuota } : q);
@@ -134,7 +148,7 @@ export default function AIStrategyInput({ onResult }: AIStrategyInputProps) {
         <div className="flex items-start justify-between gap-4">
           <div>
             <div className="flex items-center gap-2 mb-1"><span className="text-brand-500 text-lg">✦</span><h2 className="text-lg font-semibold">AI Strategy Parser</h2></div>
-            <p className="text-sm text-gray-400">Describe your strategy in plain English — AI converts it into precise backtest rules instantly.</p>
+            <p className="text-sm text-gray-400">Describe your strategy in plain English -- AI converts it into precise backtest rules instantly.</p>
           </div>
           {quota && (
             <div className="shrink-0">
@@ -150,14 +164,20 @@ export default function AIStrategyInput({ onResult }: AIStrategyInputProps) {
         </div>
 
         <div>
-          <label className="block text-sm text-gray-400 mb-2">Instrument {planKnown && !isPro && <span className="text-xs text-gray-600 ml-1">🔒 = Pro only</span>}</label>
+          <label className="block text-sm text-gray-400 mb-2">
+            Instrument
+            {planKnown && !isPro && <span className="text-xs text-gray-600 ml-1">🔒 = Pro only</span>}
+            <span className="text-xs text-gray-600 ml-2">⚡ = supports orderflow{planKnown && !isPro ? ' (Pro)' : ''}</span>
+          </label>
           <div className="flex flex-wrap gap-2 mb-2">
             {POPULAR_SYMBOLS.map(s => {
               const locked = planKnown && !isPro && isProSymbol(s.label);
+              const orderflow = supportsOrderflow(s.label);
+              const title = [s.desc, locked ? 'Pro required' : null, orderflow ? ('Supports orderflow signals' + (planKnown && !isPro ? ' (Pro)' : '')) : null].filter(Boolean).join(' -- ');
               return (
-                <button key={s.label} onClick={() => handleSymbolClick(s.label)} disabled={loading} title={locked ? s.desc + ' — Pro required' : s.desc}
+                <button key={s.label} onClick={() => handleSymbolClick(s.label)} disabled={loading} title={title}
                   className={'px-2.5 py-1 rounded text-xs font-mono font-medium border transition-all ' + (symbol === s.label ? 'bg-brand-500 border-brand-500 text-white' : locked ? 'border-white/5 text-gray-600 hover:border-indigo-500/40 hover:text-indigo-400' : 'border-white/10 text-gray-300 hover:border-brand-500/50 hover:text-white')}>
-                  {s.label}{locked ? ' 🔒' : ''}
+                  {s.label}{locked ? ' 🔒' : orderflow ? ' ⚡' : ''}
                 </button>
               );
             })}
@@ -185,7 +205,7 @@ export default function AIStrategyInput({ onResult }: AIStrategyInputProps) {
           <label className="block text-sm"><span className="block text-gray-400 mb-1">Capital ($)</span><input type="number" className="input w-full" value={initialCapital} onChange={e => setInitialCapital(Number(e.target.value))} disabled={loading} /></label>
         </div>
 
-        {interval !== '1d' && <p className="text-xs text-amber-400">{interval === '1h' ? 'Hourly data: up to ~2 years available.' : 'Intraday (5m/15m): capped at ~60 days — start date auto-set.'}</p>}
+        {interval !== '1d' && <p className="text-xs text-amber-400">{interval === '1h' ? 'Hourly data: up to ~2 years available.' : 'Intraday (5m/15m): capped at ~60 days -- start date auto-set.'}</p>}
 
         {interpretation && <div className="bg-brand-500/10 border border-brand-500/30 rounded-lg p-4 text-sm"><p className="text-brand-400 font-medium mb-1">AI interpreted:</p><p className="text-gray-200 leading-relaxed">{interpretation}</p></div>}
 
