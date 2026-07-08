@@ -126,6 +126,13 @@ function normalizeConditionNode(node: unknown): unknown {
     }
     if (n.type === 'condition') {
           let right = n.right;
+          // is_true/is_false conditions don't take a right-hand side, but the model
+          // sometimes emits an explicit right: null anyway instead of omitting the
+          // field. z.union(...).optional() accepts undefined, not null, so this
+          // fails validation even though it means exactly the same thing.
+          if (right === null) {
+                  right = undefined;
+          } else
           if (right && typeof right === 'object' && !Array.isArray(right)) {
                   const r = right as Record<string, unknown>;
                   if (r.signalId === null || r.signalId === undefined) {
