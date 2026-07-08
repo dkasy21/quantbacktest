@@ -27,8 +27,8 @@ const SYSTEM_PROMPT = `You are a quantitative trading strategy parser. The user 
 - of_buy_ratio: Fraction of bar volume that was taker-buy, 0-1 (numeric). 0.5 = balanced, >0.5 = buy-dominant. CRYPTO ONLY.
 - of_delta_divergence_bullish: Boolean — price makes a lower swing low while CVD makes a higher swing low (sellers exhausting into a dip). Params: { swingLookback: 2 }. CRYPTO ONLY.
 - of_delta_divergence_bearish: Boolean — price makes a higher swing high while CVD makes a lower swing high (buyers exhausting into a rally). Params: { swingLookback: 2 }. CRYPTO ONLY.
-- of_cvd_rising: Boolean, true when CVD is net higher than it was `lookback` bars ago (default 5) — use this for "CVD is rising/increasing/trending up" language. CRYPTO ONLY. Use is_true/is_false or bare in advancedExpression. Params: { lookback: 5 }.
-- of_cvd_falling: Boolean, true when CVD is net lower than it was `lookback` bars ago — use this for "CVD is falling/decreasing/trending down" language. CRYPTO ONLY. Params: { lookback: 5 }.
+- of_cvd_rising: Boolean, true when CVD is net higher than it was \`lookback\` bars ago (default 5) — use this for "CVD is rising/increasing/trending up" language. CRYPTO ONLY. Use is_true/is_false or bare in advancedExpression. Params: { lookback: 5 }.
+- of_cvd_falling: Boolean, true when CVD is net lower than it was \`lookback\` bars ago — use this for "CVD is falling/decreasing/trending down" language. CRYPTO ONLY. Params: { lookback: 5 }.
 
 ### ICT / Structure (boolean — use operator is_true or is_false)
 - fvg_bullish: Bullish Fair Value Gap present
@@ -83,7 +83,7 @@ Condition: { "type": "condition", "left": {"signalId": string}, "operator": "gt"
 - Always include sensible risk: stopLossPct and takeProfitPct
 - maxBarsInTrade is useful for intraday strategies
 - Stop-loss %, take-profit %, and max-bars-in-trade exits are handled EXCLUSIVELY by the "risk" object (stopLossPct, takeProfitPct, maxBarsInTrade). There are NO signals or variables named bar_number, bar_index, entryBar, entryPrice, currentBar, or similar -- NEVER reference these in advancedExpression or a ConditionGroup. advancedExpression strings may ONLY reference ids from the "signals" array (plus bare open/high/low/close/volume). If the user's prompt mentions "X% stop loss" or "exit after N bars", set the matching risk field and leave it OUT of advancedExpression entirely -- do not also add a clause for it there.
-- The expression evaluator has NO lookback/history access — it only ever sees the value of each signal at the current bar. So trend language like "CVD is rising/increasing/trending up" or "CVD is falling/decreasing/trending down" must use the of_cvd_rising / of_cvd_falling boolean signals, NOT an inline comparison like `of_cvd > 0` or a manufactured `of_cvd > previous_cvd` (there is no "previous" reference). Same logic applies to any other "X is rising/falling" phrasing — there is no generic rising/falling signal for non-orderflow indicators, so only use of_cvd_rising/of_cvd_falling for CVD trend language specifically.
+- The expression evaluator has NO lookback/history access — it only ever sees the value of each signal at the current bar. So trend language like "CVD is rising/increasing/trending up" or "CVD is falling/decreasing/trending down" must use the of_cvd_rising / of_cvd_falling boolean signals, NOT an inline comparison like \`of_cvd > 0\` or a manufactured \`of_cvd > previous_cvd\` (there is no "previous" reference). Same logic applies to any other "X is rising/falling" phrasing — there is no generic rising/falling signal for non-orderflow indicators, so only use of_cvd_rising/of_cvd_falling for CVD trend language specifically.
 
 
 ## CRITICAL — Expression syntax rules
