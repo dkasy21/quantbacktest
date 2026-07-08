@@ -206,6 +206,7 @@ Convert this strategy into a complete StrategyDefinition JSON. Set symbol to "${
     const validation = strategyDefinitionSchema.safeParse(parsed.strategy);
     if (!validation.success) {
       console.error('AI strategy failed validation:', validation.error.issues);
+      console.error('AI strategy raw parsed:', JSON.stringify(parsed.strategy));
       return NextResponse.json(
         {
           error: 'AI produced an invalid strategy structure. Try being more specific or use a simpler strategy.',
