@@ -86,6 +86,13 @@ Condition: { "type": "condition", "left": {"signalId": string}, "operator": "gt"
 - The expression evaluator has NO lookback/history access — it only ever sees the value of each signal at the current bar. So trend language like "CVD is rising/increasing/trending up" or "CVD is falling/decreasing/trending down" must use the of_cvd_rising / of_cvd_falling boolean signals, NOT an inline comparison like \`of_cvd > 0\` or a manufactured \`of_cvd > previous_cvd\` (there is no "previous" reference). Same logic applies to any other "X is rising/falling" phrasing — there is no generic rising/falling signal for non-orderflow indicators, so only use of_cvd_rising/of_cvd_falling for CVD trend language specifically.
 
 
+## CRITICAL — Condition "right" field
+- When comparing a signal against a plain number (e.g. "RSI below 30"), "right" MUST be a bare number, not an object.
+- CORRECT: { "type": "condition", "left": {"signalId":"rsi_14"}, "operator":"lt", "right": 30 }
+- WRONG: { "type": "condition", "left": {"signalId":"rsi_14"}, "operator":"lt", "right": {"signalId":null,"value":30} }
+- WRONG: { "type": "condition", "left": {"signalId":"rsi_14"}, "operator":"lt", "right": {"signalId":null}, "rightValue": 30 }
+- Only use "right": {"signalId": string} when comparing against ANOTHER signal (e.g. price crossing an SMA). Never invent a signalId of null.
+
 ## CRITICAL — Expression syntax rules
 - advancedExpression strings reference signal IDs only — NO array notation, NO square brackets
 - NEVER write expressions like: sma_20[1], close[1], rsi[0]
@@ -102,6 +109,41 @@ Condition: { "type": "condition", "left": {"signalId": string}, "operator": "gt"
 function sanitizeExpression(expr: string): string {
   // Strip any lookback notation like [1], [0], [2] that LLMs sometimes generate
   return expr.replace(/\[\d+\]/g, '');
+}
+
+// The model is told `right` for a Condition is either { signalId: string } or
+// a bare number, but it sometimes hedges on numeric thresholds and emits a
+// malformed object instead, e.g. { signalId: null, value: 30 } or
+// { signalId: null } with a sibling rightValue: 30 on the condition itself.
+// Both shapes fail schema validation even though the intent (compare against
+// the number 30) is completely unambiguous, so repair them here rather than
+// rejecting the whole strategy over a hallucinated wrapper.
+function normalizeConditionNode(node: unknown): unknown {
+    if (!node || typeof node !== 'object') return node;
+    const n = node as Record<string, unknown>;
+    if (n.type === 'group' && Array.isArray(n.children)) {
+          return { ...n, children: n.children.map(normalizeConditionNode) };
+    }
+    if (n.type === 'condition') {
+          let right = n.right;
+          if (right && typeof right === 'object' && !Array.isArray(right)) {
+                  const r = right as Record<string, unknown>;
+                  if (r.signalId === null || r.signalId === undefined) {
+                            if (typeof r.value === 'number') {
+                                        right = r.value;
+                            } else if (typeof n.rightValue === 'number') {
+                                        right = n.rightValue;
+                            } else if (typeof r.rightValue === 'number') {
+                                        right = r.rightValue;
+                            }
+                  }
+          } else if (right === undefined && typeof n.rightValue === 'number') {
+                  right = n.rightValue;
+          }
+          const { rightValue: _unused, ...rest } = n;
+          return { ...rest, right };
+    }
+    return n;
 }
 
 function extractJson(text: string): string {
@@ -184,7 +226,7 @@ Convert this strategy into a complete StrategyDefinition JSON. Set symbol to "${
     const aiData = await aiResponse.json();
     const text: string = aiData.choices?.[0]?.message?.content ?? '';
 
-    let parsed: { interpretation: string; strategy: { advancedExpression?: { entry?: string; exit?: string } } };
+    let parsed: { interpretation: string; strategy: { entry?: unknown; exit?: unknown; advancedExpression?: { entry?: string; exit?: string } } };
     try {
       const cleaned = extractJson(text);
       parsed = JSON.parse(cleaned);
@@ -203,6 +245,11 @@ Convert this strategy into a complete StrategyDefinition JSON. Set symbol to "${
       if (ae.exit) ae.exit = sanitizeExpression(ae.exit);
     }
 
+// Repair malformed numeric-threshold conditions (see normalizeConditionNode)
+    // before handing the strategy to the strict zod schema.
+    if (parsed.strategy?.entry) parsed.strategy.entry = normalizeConditionNode(parsed.strategy.entry);
+    if (parsed.strategy?.exit) parsed.strategy.exit = normalizeConditionNode(parsed.strategy.exit);
+    
     const validation = strategyDefinitionSchema.safeParse(parsed.strategy);
     if (!validation.success) {
       console.error('AI strategy failed validation:', validation.error.issues);
