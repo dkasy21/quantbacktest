@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import Footer from '@/components/Footer';
+import { FREE_WEEKLY_LIMIT } from '@/lib/plan';
 
 export default function Home() {
   return (
@@ -61,7 +62,7 @@ export default function Home() {
             <div className="mb-6">
               <p className="text-gray-400 text-sm font-semibold uppercase tracking-wider mb-2">Free</p>
               <p className="text-5xl font-extrabold">$0</p>
-              <p className="text-gray-400 mt-1">1 backtest per week</p>
+              <p className="text-gray-400 mt-1">{FREE_WEEKLY_LIMIT} backtests per week</p>
             </div>
             <ul className="space-y-3 text-gray-300 text-sm flex-1 mb-8">
               <li className="flex items-start gap-2"><span className="text-green-400 mt-0.5">✓</span> AI strategy parser</li>
