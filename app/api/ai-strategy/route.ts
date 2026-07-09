@@ -153,6 +153,24 @@ function normalizeConditionNode(node: unknown): unknown {
     return n;
 }
 
+// The model is told risk.maxBarsInTrade (and other risk fields) are optional,
+// but -- same as the right:null condition bug above -- it sometimes emits an
+// explicit JSON null for a field it doesn't want to set, instead of just
+// omitting the key. z.object({...}).optional() fields accept undefined, not
+// null, so { "maxBarsInTrade": null } fails validation even though it means
+// "no max bars" exactly like leaving the key out would. Strip any null-valued
+// keys from risk here so the strict schema only ever sees undefined or a
+// real number.
+function normalizeRisk(risk: unknown): unknown {
+  if (!risk || typeof risk !== 'object' || Array.isArray(risk)) return risk;
+  const r = risk as Record<string, unknown>;
+  const cleaned: Record<string, unknown> = {};
+  for (const key of Object.keys(r)) {
+    if (r[key] !== null) cleaned[key] = r[key];
+  }
+  return cleaned;
+}
+
 function extractJson(text: string): string {
   // Strip markdown code fences if present
   let s = text
@@ -233,7 +251,7 @@ Convert this strategy into a complete StrategyDefinition JSON. Set symbol to "${
     const aiData = await aiResponse.json();
     const text: string = aiData.choices?.[0]?.message?.content ?? '';
 
-    let parsed: { interpretation: string; strategy: { entry?: unknown; exit?: unknown; advancedExpression?: { entry?: string; exit?: string } } };
+    let parsed: { interpretation: string; strategy: { entry?: unknown; exit?: unknown; risk?: unknown; advancedExpression?: { entry?: string; exit?: string } } };
     try {
       const cleaned = extractJson(text);
       parsed = JSON.parse(cleaned);
@@ -256,6 +274,9 @@ Convert this strategy into a complete StrategyDefinition JSON. Set symbol to "${
     // before handing the strategy to the strict zod schema.
     if (parsed.strategy?.entry) parsed.strategy.entry = normalizeConditionNode(parsed.strategy.entry);
     if (parsed.strategy?.exit) parsed.strategy.exit = normalizeConditionNode(parsed.strategy.exit);
+    
+    // Repair explicit-null optional fields in risk (see normalizeRisk).
+    if (parsed.strategy?.risk) parsed.strategy.risk = normalizeRisk(parsed.strategy.risk);
     
     const validation = strategyDefinitionSchema.safeParse(parsed.strategy);
     if (!validation.success) {
