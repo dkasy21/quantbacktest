@@ -1,6 +1,6 @@
 import { prisma } from './prisma';
 
-export const FREE_WEEKLY_LIMIT = 1;
+export const FREE_WEEKLY_LIMIT = 3;
 
 export const FUTURES_SYMBOLS = new Set([
   'MNQ','NQ','MES','ES','YM','MYM','RTY','M2K',
@@ -16,7 +16,7 @@ export function isFuturesSymbol(symbol: string): boolean {
 
 // Crypto tickers/pairs that resolve to Binance.US and therefore carry real
 // orderflow data (see lib/data/binanceData.ts). Kept in sync manually with
-// binanceData.ts's ALIAS_MAP + DIRECT_PAIR_RE -- duplicated here (rather than
+// binanceData.ts's ALIAS_MAP + DIRECT_PAIR_RE — duplicated here (rather than
 // imported) so this file, which is used by API routes, doesn't need to pull
 // in the data-fetching module just for a symbol check.
 export const ORDERFLOW_SYMBOLS = new Set([
@@ -32,11 +32,10 @@ export function supportsOrderflow(symbol: string): boolean {
 
 const ORDERFLOW_SIGNAL_PREFIX = 'of_';
 
-/** True if the strategy references any orderflow (`of_*`) signal -- these are Pro-only. */
+/** True if the strategy references any orderflow (`of_*`) signal — these are Pro-only. */
 export function usesOrderflowSignals(strategy: { signals?: { kind: string }[] }): boolean {
   return (strategy.signals ?? []).some((s) => s.kind.startsWith(ORDERFLOW_SIGNAL_PREFIX));
 }
-
 
 /** Read-only quota check — does NOT consume a backtest. */
 export async function getQuota(user: {
@@ -85,7 +84,7 @@ export async function ensureQuotaAndConsume(user: {
     return {
       allowed: false,
       remaining: 0,
-      message: `Free plan limit reached (1 backtest/week). Resets in ${daysLeft} day${daysLeft === 1 ? '' : 's'}. Upgrade to Pro for unlimited backtests on all instruments including futures.`,
+      message: `Free plan limit reached (${FREE_WEEKLY_LIMIT} backtests/week). Resets in ${daysLeft} day${daysLeft === 1 ? '' : 's'}. Upgrade to Pro for unlimited backtests on all instruments including futures.`,
     };
   }
 

@@ -5,7 +5,7 @@ import { prisma } from '@/lib/prisma';
 import { backtestRequestSchema } from '@/lib/backtest/schema';
 import { runBacktest, validateStrategy } from '@/lib/backtest/engine';
 import { fetchBars, DataFetchError } from '@/lib/data';
-import { ensureQuotaAndConsume, isFuturesSymbol, usesOrderflowSignals } from '@/lib/plan';
+import { ensureQuotaAndConsume, isFuturesSymbol, usesOrderflowSignals, FREE_WEEKLY_LIMIT } from '@/lib/plan';
 import type { StrategyDefinition } from '@/lib/backtest/types';
 
 export async function POST(req: Request) {
@@ -48,9 +48,9 @@ export async function POST(req: Request) {
   }
 
   // Block orderflow signals (of_delta, of_cvd, of_buy_ratio, delta divergence,
-  // CVD rising/falling) for free users. These are a real differentiator --
+  // CVD rising/falling) for free users. These are a real differentiator —
   // genuine per-candle buy/sell volume data from Binance.US, not available
-  // from any of the free-tier data providers -- so they're Pro-only.
+  // from any of the free-tier data providers — so they're Pro-only.
   if (usesOrderflowSignals(strategy) && user.plan !== 'pro') {
     return NextResponse.json(
       {
@@ -64,7 +64,7 @@ export async function POST(req: Request) {
   const quota = await ensureQuotaAndConsume(user);
   if (!quota.allowed) {
     return NextResponse.json(
-      { error: (quota as { message?: string }).message ?? 'Free plan limit reached (1 backtest/week). Upgrade to Pro for unlimited backtests.' },
+      { error: (quota as { message?: string }).message ?? `Free plan limit reached (${FREE_WEEKLY_LIMIT} backtests/week). Upgrade to Pro for unlimited backtests.` },
       { status: 429 }
     );
   }
