@@ -189,5 +189,28 @@ export async function fetchBars(params: FetchBarsParams): Promise<Bar[]> {
     bars = resample(bars, resampleMinutes);
   }
 
+  // Coverage check: Databento silently returns whatever data your account's
+  // entitlement/dataset subscription actually includes, with no error if
+  // that's less than what was requested (e.g. a lower-tier plan might only
+  // include the last few months of GLBX.MDP3 history even if you ask for
+  // years). Nothing above would catch that — res.ok is true and bars.length
+  // is nonzero either way. Compare the earliest returned bar against the
+  // requested start date and warn loudly if there's a real gap, so this
+  // shows up in logs instead of silently looking like "3 years of data"
+  // when it's actually much less. Tolerance is 5 days to allow for
+  // weekends/holidays/exchange closures near the requested start.
+  const requestedStart = new Date(params.startDate).getTime() / 1000;
+  const earliestBar = bars[0].time;
+  const gapDays = (earliestBar - requestedStart) / 86400;
+  if (gapDays > 5) {
+    console.warn(
+      `[data] Databento coverage gap for "${params.symbol}": requested data from ` +
+      `${params.startDate}, but the earliest bar returned is ${new Date(earliestBar * 1000).toISOString().slice(0, 10)} ` +
+      `(~${Math.round(gapDays)} days short). This likely means the account's Databento ` +
+      `plan/entitlement doesn't include history that far back for ${databentoSymbol}, not a bug ` +
+      `in this integration. Check the dataset subscription at https://databento.com/platform/licensing.`
+    );
+  }
+
   return bars;
 }
