@@ -78,14 +78,15 @@ Condition: { "type": "condition", "left": {"signalId": string}, "operator": "gt"
 - When using advancedExpression, set entry/exit ConditionGroup to { "type": "group", "logic": "AND", "children": [] }
 - Boolean signals (ICT/Structure + volume_spike) MUST use is_true/is_false in conditions, or just the id bare in advancedExpression strings
 - Numeric signals use gt/gte/lt/lte/crosses_above/crosses_below
-- Orderflow signals (of_delta, of_cvd, of_buy_ratio, of_delta_divergence_bullish/bearish, of_cvd_rising, of_cvd_falling) only produce real values for crypto symbols fetched from Binance, and require a Pro subscription — if the user is on the free plan the backtest will be blocked with an upgrade prompt rather than run. If the user asks for an orderflow/delta/CVD strategy on a stock, forex pair, or futures symbol, still build it as requested but mention in "interpretation" that orderflow data isn't available for that symbol and results will show no trades.
+- For ANY "opening range breakout" or "ORB" strategy: use orb_bullish/orb_bearish signals — they automatically track the first bar's high/low and fire on breakouts. Do NOT use bos_bullish + kill_zone for ORB.
 - For "break and retest": approximate as bos_bullish followed by discount_zone (pulled back to discount = retested the level)
-- Always include sensible risk: stopLossPct and takeProfitPct
-- risk.stopLossPct and risk.takeProfitPct are PERCENTAGES on a 0-100 scale, where 2 means 2% -- NOT a decimal fraction like 0.02. If the user specifies stop-loss/take-profit in points, pips, or a dollar amount instead of a percentage, convert it to this percentage scale before outputting: estimate the symbol's approximate current price and compute (points-or-price-equivalent / price) * 100, or for a dollar amount clearly meant as account risk, (dollars / initialCapital) * 100. A 50-pip stop on a ~1.10 forex pair is 50 * 0.0001 / 1.10 * 100 = 0.45, NOT 0.005 -- that raw 0.005 figure is the price-fraction, not the percentage; multiplying by 100 to reach percent scale is the step models most often skip. Sanity-check that the final number is a plausible percentage (commonly 0.1-10 for most stop-losses) before outputting it.
-- maxBarsInTrade is useful for intraday strategies
-- Stop-loss %, take-profit %, and max-bars-in-trade exits are handled EXCLUSIVELY by the "risk" object (stopLossPct, takeProfitPct, maxBarsInTrade). There are NO signals or variables named bar_number, bar_index, entryBar, entryPrice, currentBar, or similar -- NEVER reference these in advancedExpression or a ConditionGroup. advancedExpression strings may ONLY reference ids from the "signals" array (plus bare open/high/low/close/volume). If the user's prompt mentions "X% stop loss" or "exit after N bars", set the matching risk field and leave it OUT of advancedExpression entirely -- do not also add a clause for it there.
+- Orderflow signals (of_delta, of_cvd, of_buy_ratio, of_delta_divergence_bullish/bearish, of_cvd_rising, of_cvd_falling) only produce real values for crypto symbols fetched from Binance, and require a Pro subscription — if the user is on the free plan the backtest will be blocked with an upgrade prompt rather than run. If the user asks for an orderflow/delta/CVD strategy on a stock, forex pair, or futures symbol, still build it as requested but mention in "interpretation" that orderflow data isn't available for that symbol and results will show no trades.
 - The expression evaluator has NO lookback/history access — it only ever sees the value of each signal at the current bar. So trend language like "CVD is rising/increasing/trending up" or "CVD is falling/decreasing/trending down" must use the of_cvd_rising / of_cvd_falling boolean signals, NOT an inline comparison like \`of_cvd > 0\` or a manufactured \`of_cvd > previous_cvd\` (there is no "previous" reference). Same logic applies to any other "X is rising/falling" phrasing — there is no generic rising/falling signal for non-orderflow indicators, so only use of_cvd_rising/of_cvd_falling for CVD trend language specifically.
-
+- Always include sensible risk: stopLossPct and takeProfitPct
+- risk.stopLossPct and risk.takeProfitPct are PERCENTAGES on a 0-100 scale, where 2 means 2% — NOT a decimal fraction like 0.02. If the user specifies stop-loss/take-profit in points, pips, or a dollar amount instead of a percentage, convert it to this percentage scale before outputting: estimate the symbol's approximate current price and compute (points or price-equivalent / price) * 100. A 50-pip stop on a ~1.10 forex pair is 50 * 0.0001 / 1.10 * 100 ≈ 0.45, NOT 0.005 — that raw 0.005 figure is the price-fraction, not the percentage; multiplying by 100 to reach percent scale is the step models most often skip.
+- For a PLAIN DOLLAR amount ($X stop/take-profit) on a stock, ETF, or crypto symbol: treat it as a price move ((dollars / price) * 100) UNLESS the user's wording explicitly ties it to the account/portfolio (e.g. "risk $X of my account", "$X of capital") — only THEN use (dollars / initialCapital) * 100 instead. When estimating "price" for this division, do not guess wildly: use these approximate current-price anchors for common symbols (SPY ~600, QQQ ~500, AAPL ~220, TSLA ~250, NVDA ~140, BTC ~100000, ETH ~3500, gold/XAUUSD ~2600, EURUSD ~1.08) and a reasonable estimate in the same ballpark for anything else — a stock trading in the hundreds should never be treated as if it were near $1000+ unless you have a specific reason to believe that. Sanity-check the final stopLossPct/takeProfitPct against the position: it should almost always land between 0.1 and 15 for a stop-loss on a normal instrument — a $5 stop on a stock priced in the hundreds should come out well under 5%, not under 1% from an inflated price guess.
+- maxBarsInTrade is useful for intraday strategies
+- Stop-loss %, take-profit %, and max-bars-in-trade exits are handled EXCLUSIVELY by the "risk" object (stopLossPct, takeProfitPct, maxBarsInTrade). There are NO signals or variables named bar_number, bar_index, entryBar, entryPrice, currentBar, or similar — NEVER reference these in advancedExpression or a ConditionGroup. advancedExpression strings may ONLY reference ids from the "signals" array (plus bare open/high/low/close/volume). If the user's prompt mentions "X% stop loss" or "exit after N bars", set the matching risk field and leave it OUT of advancedExpression entirely — do not also add a clause for it there.
 
 ## CRITICAL — Condition "right" field
 - When comparing a signal against a plain number (e.g. "RSI below 30"), "right" MUST be a bare number, not an object.
@@ -120,45 +121,44 @@ function sanitizeExpression(expr: string): string {
 // the number 30) is completely unambiguous, so repair them here rather than
 // rejecting the whole strategy over a hallucinated wrapper.
 function normalizeConditionNode(node: unknown): unknown {
-    if (!node || typeof node !== 'object') return node;
-    const n = node as Record<string, unknown>;
-    if (n.type === 'group' && Array.isArray(n.children)) {
-          return { ...n, children: n.children.map(normalizeConditionNode) };
+  if (!node || typeof node !== 'object') return node;
+  const n = node as Record<string, unknown>;
+  if (n.type === 'group' && Array.isArray(n.children)) {
+    return { ...n, children: n.children.map(normalizeConditionNode) };
+  }
+  if (n.type === 'condition') {
+    let right = n.right;
+    // is_true/is_false conditions don't take a right-hand side, but the model
+    // sometimes emits an explicit `right: null` anyway instead of omitting the
+    // field. z.union(...).optional() accepts undefined, not null, so this
+    // fails validation even though it means exactly the same thing.
+    if (right === null) {
+      right = undefined;
+    } else if (right && typeof right === 'object' && !Array.isArray(right)) {
+      const r = right as Record<string, unknown>;
+      if (r.signalId === null || r.signalId === undefined) {
+        if (typeof r.value === 'number') {
+          right = r.value;
+        } else if (typeof n.rightValue === 'number') {
+          right = n.rightValue;
+        } else if (typeof r.rightValue === 'number') {
+          right = r.rightValue;
+        }
+      }
+    } else if (right === undefined && typeof n.rightValue === 'number') {
+      right = n.rightValue;
     }
-    if (n.type === 'condition') {
-          let right = n.right;
-          // is_true/is_false conditions don't take a right-hand side, but the model
-          // sometimes emits an explicit right: null anyway instead of omitting the
-          // field. z.union(...).optional() accepts undefined, not null, so this
-          // fails validation even though it means exactly the same thing.
-          if (right === null) {
-                  right = undefined;
-          } else
-          if (right && typeof right === 'object' && !Array.isArray(right)) {
-                  const r = right as Record<string, unknown>;
-                  if (r.signalId === null || r.signalId === undefined) {
-                            if (typeof r.value === 'number') {
-                                        right = r.value;
-                            } else if (typeof n.rightValue === 'number') {
-                                        right = n.rightValue;
-                            } else if (typeof r.rightValue === 'number') {
-                                        right = r.rightValue;
-                            }
-                  }
-          } else if (right === undefined && typeof n.rightValue === 'number') {
-                  right = n.rightValue;
-          }
-          const { rightValue: _unused, ...rest } = n;
-          return { ...rest, right };
-    }
-    return n;
+    const { rightValue: _unused, ...rest } = n;
+    return { ...rest, right };
+  }
+  return n;
 }
 
 // The model is told risk.maxBarsInTrade (and other risk fields) are optional,
-// but -- same as the right:null condition bug above -- it sometimes emits an
-// explicit JSON null for a field it doesn't want to set, instead of just
+// but — same as the right:null condition bug above — it sometimes emits an
+// explicit JSON `null` for a field it doesn't want to set, instead of just
 // omitting the key. z.object({...}).optional() fields accept undefined, not
-// null, so { "maxBarsInTrade": null } fails validation even though it means
+// null, so `{ "maxBarsInTrade": null }` fails validation even though it means
 // "no max bars" exactly like leaving the key out would. Strip any null-valued
 // keys from risk here so the strict schema only ever sees undefined or a
 // real number.
@@ -271,14 +271,14 @@ Convert this strategy into a complete StrategyDefinition JSON. Set symbol to "${
       if (ae.exit) ae.exit = sanitizeExpression(ae.exit);
     }
 
-// Repair malformed numeric-threshold conditions (see normalizeConditionNode)
+    // Repair malformed numeric-threshold conditions (see normalizeConditionNode)
     // before handing the strategy to the strict zod schema.
     if (parsed.strategy?.entry) parsed.strategy.entry = normalizeConditionNode(parsed.strategy.entry);
     if (parsed.strategy?.exit) parsed.strategy.exit = normalizeConditionNode(parsed.strategy.exit);
-    
+
     // Repair explicit-null optional fields in risk (see normalizeRisk).
     if (parsed.strategy?.risk) parsed.strategy.risk = normalizeRisk(parsed.strategy.risk);
-    
+
     const validation = strategyDefinitionSchema.safeParse(parsed.strategy);
     if (!validation.success) {
       console.error('AI strategy failed validation:', validation.error.issues);
