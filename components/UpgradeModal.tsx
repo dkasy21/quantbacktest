@@ -30,7 +30,7 @@ export default function UpgradeModal({ open, onClose, reason, resetAt }: Upgrade
 
         {/* Title */}
         <h2 className="text-2xl font-bold text-center mb-2">
-          {reason === 'quota' ? 'Weekly Limit Reached' : 'Pro Plan Required'}
+          {reason === 'quota' ? 'Weekly Limit Reached' : reason === 'orderflow' ? 'Pro Plan Required' : 'Pro Plan Required'}
         </h2>
 
         {/* Body */}
@@ -39,7 +39,10 @@ export default function UpgradeModal({ open, onClose, reason, resetAt }: Upgrade
             ? 'Futures & index symbols (MNQ, ES, NQ, XAUUSD, SPX…) require a Pro subscription. Upgrade to backtest any instrument with full historical data from 2020.'
             : reason === 'orderflow'
             ? 'Orderflow signals (delta, CVD, buy ratio, delta divergence) use real buy/sell volume data from Binance.US and require a Pro subscription. Upgrade to unlock them on any crypto pair.'
-            : `Free plan includes 1 backtest per week.${daysLeft && daysLeft > 0 ? ` Your quota resets in ${daysLeft} day${daysLeft === 1 ? '' : 's'}.` : ''} Upgrade to Pro for unlimited backtests on every instrument.`}
+            // Keep this number in sync with FREE_WEEKLY_LIMIT in lib/plan.ts.
+            // Not importing that constant here because lib/plan.ts pulls in
+            // the Prisma client, which shouldn't end up in a 'use client' bundle.
+            : `Free plan includes 3 backtests per week.${daysLeft && daysLeft > 0 ? ` Your quota resets in ${daysLeft} day${daysLeft === 1 ? '' : 's'}.` : ''} Upgrade to Pro for unlimited backtests on every instrument.`}
         </p>
 
         {/* Plan features */}

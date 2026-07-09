@@ -17,6 +17,13 @@ export default function Footer() {
         chart analysis. Volume/order-flow signals are derived from OHLCV volume, not real bid/ask
         or Level 2 order flow.
       </p>
+      <p>
+        Market data displayed here is provided for personal backtesting and research use only. It
+        is not intended for redistribution, real-time trading decisions, or display as a
+        standalone data product, and may originate from sources with their own usage
+        restrictions. If you need data cleared for a specific commercial or redistribution use
+        case, consult the relevant provider&apos;s licensing terms directly.
+      </p>
       <div className="flex gap-4 pt-1">
         <Link href="/terms" className="hover:text-gray-300 underline">Terms of Service</Link>
         <Link href="/privacy" className="hover:text-gray-300 underline">Privacy Policy</Link>
