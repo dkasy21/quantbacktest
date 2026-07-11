@@ -224,80 +224,104 @@ Initial capital: ${initialCapital || 10000}
 
 Convert this strategy into a complete StrategyDefinition JSON. Set symbol to "${symbol || 'SPY'}" and initialCapital to ${initialCapital || 10000}.`;
 
-  try {
-    const aiResponse = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model: 'llama-3.3-70b-versatile',
-        max_tokens: 2048,
-        temperature: 0.1,
-        response_format: { type: 'json_object' },
-        messages: [
-          { role: 'system', content: SYSTEM_PROMPT },
-          { role: 'user', content: userMessage },
-        ],
-      }),
-    });
+  // Groq's JSON mode occasionally fails outright (json_validate_failed) or
+  // returns a response that doesn't survive our own parsing/schema checks —
+  // most often because a longer/more complex strategy runs the model close
+  // to the output-length ceiling, or generation is just non-deterministically
+  // malformed on a given attempt. None of these are usually reproducible on
+  // a second try with the exact same prompt, so retry the whole round trip
+  // once before surfacing a user-facing error.
+  const MAX_ATTEMPTS = 2;
+  let lastErrorResponse: NextResponse = NextResponse.json(
+    { error: 'AI service error. Please try again.' },
+    { status: 502 }
+  );
 
-    if (!aiResponse.ok) {
-      const err = await aiResponse.text();
-      console.error('Groq API error:', err);
-      return NextResponse.json({ error: 'AI service error. Please try again.' }, { status: 502 });
-    }
-
-    const aiData = await aiResponse.json();
-    const text: string = aiData.choices?.[0]?.message?.content ?? '';
-
-    let parsed: { interpretation: string; strategy: { entry?: unknown; exit?: unknown; risk?: unknown; advancedExpression?: { entry?: string; exit?: string } } };
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     try {
-      const cleaned = extractJson(text);
-      parsed = JSON.parse(cleaned);
-    } catch {
-      console.error('Failed to parse AI response:', text);
-      return NextResponse.json(
-        { error: 'AI returned an unparseable response. Try rephrasing your strategy description.' },
-        { status: 502 }
-      );
-    }
-
-    // Sanitize any accidental lookback notation in advancedExpression
-    if (parsed.strategy?.advancedExpression) {
-      const ae = parsed.strategy.advancedExpression;
-      if (ae.entry) ae.entry = sanitizeExpression(ae.entry);
-      if (ae.exit) ae.exit = sanitizeExpression(ae.exit);
-    }
-
-    // Repair malformed numeric-threshold conditions (see normalizeConditionNode)
-    // before handing the strategy to the strict zod schema.
-    if (parsed.strategy?.entry) parsed.strategy.entry = normalizeConditionNode(parsed.strategy.entry);
-    if (parsed.strategy?.exit) parsed.strategy.exit = normalizeConditionNode(parsed.strategy.exit);
-
-    // Repair explicit-null optional fields in risk (see normalizeRisk).
-    if (parsed.strategy?.risk) parsed.strategy.risk = normalizeRisk(parsed.strategy.risk);
-
-    const validation = strategyDefinitionSchema.safeParse(parsed.strategy);
-    if (!validation.success) {
-      console.error('AI strategy failed validation:', validation.error.issues);
-      console.error('AI strategy raw parsed:', JSON.stringify(parsed.strategy));
-      return NextResponse.json(
-        {
-          error: 'AI produced an invalid strategy structure. Try being more specific or use a simpler strategy.',
-          details: validation.error.issues[0]?.message,
+      const aiResponse = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}`,
         },
-        { status: 422 }
-      );
-    }
+        body: JSON.stringify({
+          model: 'llama-3.3-70b-versatile',
+          // Bumped from 2048 — longer/multi-condition strategies (several
+          // signals, OR groups, a full risk object, plus the interpretation
+          // text) could get cut off mid-JSON at the old ceiling, which is
+          // exactly what causes Groq's json_validate_failed error.
+          max_tokens: 4096,
+          temperature: 0.1,
+          response_format: { type: 'json_object' },
+          messages: [
+            { role: 'system', content: SYSTEM_PROMPT },
+            { role: 'user', content: userMessage },
+          ],
+        }),
+      });
 
-    return NextResponse.json({
-      interpretation: parsed.interpretation ?? '',
-      strategy: validation.data,
-    });
-  } catch (err) {
-    console.error('AI strategy route error:', err);
-    return NextResponse.json({ error: 'Failed to parse strategy. Please try again.' }, { status: 500 });
+      if (!aiResponse.ok) {
+        const err = await aiResponse.text();
+        console.error(`Groq API error (attempt ${attempt}/${MAX_ATTEMPTS}):`, err);
+        lastErrorResponse = NextResponse.json({ error: 'AI service error. Please try again.' }, { status: 502 });
+        continue;
+      }
+
+      const aiData = await aiResponse.json();
+      const text: string = aiData.choices?.[0]?.message?.content ?? '';
+
+      let parsed: { interpretation: string; strategy: { entry?: unknown; exit?: unknown; risk?: unknown; advancedExpression?: { entry?: string; exit?: string } } };
+      try {
+        const cleaned = extractJson(text);
+        parsed = JSON.parse(cleaned);
+      } catch {
+        console.error(`Failed to parse AI response (attempt ${attempt}/${MAX_ATTEMPTS}):`, text);
+        lastErrorResponse = NextResponse.json(
+          { error: 'AI returned an unparseable response. Try rephrasing your strategy description.' },
+          { status: 502 }
+        );
+        continue;
+      }
+
+      // Sanitize any accidental lookback notation in advancedExpression
+      if (parsed.strategy?.advancedExpression) {
+        const ae = parsed.strategy.advancedExpression;
+        if (ae.entry) ae.entry = sanitizeExpression(ae.entry);
+        if (ae.exit) ae.exit = sanitizeExpression(ae.exit);
+      }
+
+      // Repair malformed numeric-threshold conditions (see normalizeConditionNode)
+      // before handing the strategy to the strict zod schema.
+      if (parsed.strategy?.entry) parsed.strategy.entry = normalizeConditionNode(parsed.strategy.entry);
+      if (parsed.strategy?.exit) parsed.strategy.exit = normalizeConditionNode(parsed.strategy.exit);
+
+      // Repair explicit-null optional fields in risk (see normalizeRisk).
+      if (parsed.strategy?.risk) parsed.strategy.risk = normalizeRisk(parsed.strategy.risk);
+
+      const validation = strategyDefinitionSchema.safeParse(parsed.strategy);
+      if (!validation.success) {
+        console.error(`AI strategy failed validation (attempt ${attempt}/${MAX_ATTEMPTS}):`, validation.error.issues);
+        console.error('AI strategy raw parsed:', JSON.stringify(parsed.strategy));
+        lastErrorResponse = NextResponse.json(
+          {
+            error: 'AI produced an invalid strategy structure. Try being more specific or use a simpler strategy.',
+            details: validation.error.issues[0]?.message,
+          },
+          { status: 422 }
+        );
+        continue;
+      }
+
+      return NextResponse.json({
+        interpretation: parsed.interpretation ?? '',
+        strategy: validation.data,
+      });
+    } catch (err) {
+      console.error(`AI strategy route error (attempt ${attempt}/${MAX_ATTEMPTS}):`, err);
+      lastErrorResponse = NextResponse.json({ error: 'Failed to parse strategy. Please try again.' }, { status: 500 });
+    }
   }
+
+  return lastErrorResponse;
 }
