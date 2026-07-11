@@ -172,6 +172,10 @@ function normalizeRisk(risk: unknown): unknown {
   return cleaned;
 }
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 function extractJson(text: string): string {
   // Strip markdown code fences if present
   let s = text
@@ -236,8 +240,21 @@ Convert this strategy into a complete StrategyDefinition JSON. Set symbol to "${
     { error: 'AI service error. Please try again.' },
     { status: 502 }
   );
+  // How long to wait before the *next* attempt. Retrying instantly after a
+  // failure is fine for a one-off malformed-JSON generation, but it's the
+  // wrong move after a 429 — Groq's tokens-per-minute budget is shared across
+  // every request in the same rolling minute, so firing a second ~7k-token
+  // request microseconds after the first one (which just used a big chunk of
+  // that same budget) reliably trips the limit again. Default to a small
+  // pause between any retry; if the failure was specifically a rate limit,
+  // honor Groq's own suggested wait time instead (capped so we don't blow
+  // the serverless function's execution timeout).
+  let nextAttemptDelayMs = 1500;
 
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    if (attempt > 1) {
+      await sleep(nextAttemptDelayMs);
+    }
     try {
       const aiResponse = await fetch('https://api.groq.com/openai/v1/chat/completions', {
         method: 'POST',
@@ -265,6 +282,17 @@ Convert this strategy into a complete StrategyDefinition JSON. Set symbol to "${
         const err = await aiResponse.text();
         console.error(`Groq API error (attempt ${attempt}/${MAX_ATTEMPTS}):`, err);
         lastErrorResponse = NextResponse.json({ error: 'AI service error. Please try again.' }, { status: 502 });
+
+        // Rate limit (429) needs a real wait, not a fixed 1.5s guess — Groq
+        // tells us exactly how long in the error body ("Please try again in
+        // 9.61s"). Parse it and use it, capped at 8s so two attempts plus
+        // the wait can't realistically blow past a typical serverless
+        // function timeout.
+        if (aiResponse.status === 429) {
+          const match = err.match(/try again in ([\d.]+)s/i);
+          const suggestedSeconds = match ? parseFloat(match[1]) : 5;
+          nextAttemptDelayMs = Math.min(Math.ceil(suggestedSeconds * 1000) + 250, 8000);
+        }
         continue;
       }
 
