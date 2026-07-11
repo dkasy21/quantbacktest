@@ -172,6 +172,10 @@ function normalizeRisk(risk: unknown): unknown {
   return cleaned;
 }
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 function extractJson(text: string): string {
   // Strip markdown code fences if present
   let s = text
@@ -224,80 +228,128 @@ Initial capital: ${initialCapital || 10000}
 
 Convert this strategy into a complete StrategyDefinition JSON. Set symbol to "${symbol || 'SPY'}" and initialCapital to ${initialCapital || 10000}.`;
 
-  try {
-    const aiResponse = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model: 'llama-3.3-70b-versatile',
-        max_tokens: 2048,
-        temperature: 0.1,
-        response_format: { type: 'json_object' },
-        messages: [
-          { role: 'system', content: SYSTEM_PROMPT },
-          { role: 'user', content: userMessage },
-        ],
-      }),
-    });
+  // Groq's JSON mode occasionally fails outright (json_validate_failed) or
+  // returns a response that doesn't survive our own parsing/schema checks —
+  // most often because a longer/more complex strategy runs the model close
+  // to the output-length ceiling, or generation is just non-deterministically
+  // malformed on a given attempt. None of these are usually reproducible on
+  // a second try with the exact same prompt, so retry the whole round trip
+  // once before surfacing a user-facing error.
+  const MAX_ATTEMPTS = 2;
+  let lastErrorResponse: NextResponse = NextResponse.json(
+    { error: 'AI service error. Please try again.' },
+    { status: 502 }
+  );
+  // How long to wait before the *next* attempt. Retrying instantly after a
+  // failure is fine for a one-off malformed-JSON generation, but it's the
+  // wrong move after a 429 — Groq's tokens-per-minute budget is shared across
+  // every request in the same rolling minute, so firing a second ~7k-token
+  // request microseconds after the first one (which just used a big chunk of
+  // that same budget) reliably trips the limit again. Default to a small
+  // pause between any retry; if the failure was specifically a rate limit,
+  // honor Groq's own suggested wait time instead (capped so we don't blow
+  // the serverless function's execution timeout).
+  let nextAttemptDelayMs = 1500;
 
-    if (!aiResponse.ok) {
-      const err = await aiResponse.text();
-      console.error('Groq API error:', err);
-      return NextResponse.json({ error: 'AI service error. Please try again.' }, { status: 502 });
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    if (attempt > 1) {
+      await sleep(nextAttemptDelayMs);
     }
-
-    const aiData = await aiResponse.json();
-    const text: string = aiData.choices?.[0]?.message?.content ?? '';
-
-    let parsed: { interpretation: string; strategy: { entry?: unknown; exit?: unknown; risk?: unknown; advancedExpression?: { entry?: string; exit?: string } } };
     try {
-      const cleaned = extractJson(text);
-      parsed = JSON.parse(cleaned);
-    } catch {
-      console.error('Failed to parse AI response:', text);
-      return NextResponse.json(
-        { error: 'AI returned an unparseable response. Try rephrasing your strategy description.' },
-        { status: 502 }
-      );
-    }
-
-    // Sanitize any accidental lookback notation in advancedExpression
-    if (parsed.strategy?.advancedExpression) {
-      const ae = parsed.strategy.advancedExpression;
-      if (ae.entry) ae.entry = sanitizeExpression(ae.entry);
-      if (ae.exit) ae.exit = sanitizeExpression(ae.exit);
-    }
-
-    // Repair malformed numeric-threshold conditions (see normalizeConditionNode)
-    // before handing the strategy to the strict zod schema.
-    if (parsed.strategy?.entry) parsed.strategy.entry = normalizeConditionNode(parsed.strategy.entry);
-    if (parsed.strategy?.exit) parsed.strategy.exit = normalizeConditionNode(parsed.strategy.exit);
-
-    // Repair explicit-null optional fields in risk (see normalizeRisk).
-    if (parsed.strategy?.risk) parsed.strategy.risk = normalizeRisk(parsed.strategy.risk);
-
-    const validation = strategyDefinitionSchema.safeParse(parsed.strategy);
-    if (!validation.success) {
-      console.error('AI strategy failed validation:', validation.error.issues);
-      console.error('AI strategy raw parsed:', JSON.stringify(parsed.strategy));
-      return NextResponse.json(
-        {
-          error: 'AI produced an invalid strategy structure. Try being more specific or use a simpler strategy.',
-          details: validation.error.issues[0]?.message,
+      const aiResponse = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}`,
         },
-        { status: 422 }
-      );
-    }
+        body: JSON.stringify({
+          model: 'llama-3.3-70b-versatile',
+          // Bumped from 2048 — longer/multi-condition strategies (several
+          // signals, OR groups, a full risk object, plus the interpretation
+          // text) could get cut off mid-JSON at the old ceiling, which is
+          // exactly what causes Groq's json_validate_failed error.
+          max_tokens: 4096,
+          temperature: 0.1,
+          response_format: { type: 'json_object' },
+          messages: [
+            { role: 'system', content: SYSTEM_PROMPT },
+            { role: 'user', content: userMessage },
+          ],
+        }),
+      });
 
-    return NextResponse.json({
-      interpretation: parsed.interpretation ?? '',
-      strategy: validation.data,
-    });
-  } catch (err) {
-    console.error('AI strategy route error:', err);
-    return NextResponse.json({ error: 'Failed to parse strategy. Please try again.' }, { status: 500 });
+      if (!aiResponse.ok) {
+        const err = await aiResponse.text();
+        console.error(`Groq API error (attempt ${attempt}/${MAX_ATTEMPTS}):`, err);
+        lastErrorResponse = NextResponse.json({ error: 'AI service error. Please try again.' }, { status: 502 });
+
+        // Rate limit (429) needs a real wait, not a fixed 1.5s guess — Groq
+        // tells us exactly how long in the error body ("Please try again in
+        // 9.61s"). Parse it and use it, capped at 8s so two attempts plus
+        // the wait can't realistically blow past a typical serverless
+        // function timeout.
+        if (aiResponse.status === 429) {
+          const match = err.match(/try again in ([\d.]+)s/i);
+          const suggestedSeconds = match ? parseFloat(match[1]) : 5;
+          nextAttemptDelayMs = Math.min(Math.ceil(suggestedSeconds * 1000) + 250, 8000);
+        }
+        continue;
+      }
+
+      const aiData = await aiResponse.json();
+      const text: string = aiData.choices?.[0]?.message?.content ?? '';
+
+      let parsed: { interpretation: string; strategy: { entry?: unknown; exit?: unknown; risk?: unknown; advancedExpression?: { entry?: string; exit?: string } } };
+      try {
+        const cleaned = extractJson(text);
+        parsed = JSON.parse(cleaned);
+      } catch {
+        console.error(`Failed to parse AI response (attempt ${attempt}/${MAX_ATTEMPTS}):`, text);
+        lastErrorResponse = NextResponse.json(
+          { error: 'AI returned an unparseable response. Try rephrasing your strategy description.' },
+          { status: 502 }
+        );
+        continue;
+      }
+
+      // Sanitize any accidental lookback notation in advancedExpression
+      if (parsed.strategy?.advancedExpression) {
+        const ae = parsed.strategy.advancedExpression;
+        if (ae.entry) ae.entry = sanitizeExpression(ae.entry);
+        if (ae.exit) ae.exit = sanitizeExpression(ae.exit);
+      }
+
+      // Repair malformed numeric-threshold conditions (see normalizeConditionNode)
+      // before handing the strategy to the strict zod schema.
+      if (parsed.strategy?.entry) parsed.strategy.entry = normalizeConditionNode(parsed.strategy.entry);
+      if (parsed.strategy?.exit) parsed.strategy.exit = normalizeConditionNode(parsed.strategy.exit);
+
+      // Repair explicit-null optional fields in risk (see normalizeRisk).
+      if (parsed.strategy?.risk) parsed.strategy.risk = normalizeRisk(parsed.strategy.risk);
+
+      const validation = strategyDefinitionSchema.safeParse(parsed.strategy);
+      if (!validation.success) {
+        console.error(`AI strategy failed validation (attempt ${attempt}/${MAX_ATTEMPTS}):`, validation.error.issues);
+        console.error('AI strategy raw parsed:', JSON.stringify(parsed.strategy));
+        lastErrorResponse = NextResponse.json(
+          {
+            error: 'AI produced an invalid strategy structure. Try being more specific or use a simpler strategy.',
+            details: validation.error.issues[0]?.message,
+          },
+          { status: 422 }
+        );
+        continue;
+      }
+
+      return NextResponse.json({
+        interpretation: parsed.interpretation ?? '',
+        strategy: validation.data,
+      });
+    } catch (err) {
+      console.error(`AI strategy route error (attempt ${attempt}/${MAX_ATTEMPTS}):`, err);
+      lastErrorResponse = NextResponse.json({ error: 'Failed to parse strategy. Please try again.' }, { status: 500 });
+    }
   }
+
+  return lastErrorResponse;
 }
